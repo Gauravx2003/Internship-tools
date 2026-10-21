@@ -1,6 +1,6 @@
 package com.motadata.websession.auth;
 
-import com.motadata.websession.auth.handler.AuthHandler;
+import com.motadata.websession.modules.auth.handler.AuthHandler;
 import com.motadata.websession.backend_vertx_service.MainVerticle;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;

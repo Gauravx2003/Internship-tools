@@ -1,4 +1,4 @@
-package com.motadata.websession.credentials.handler;
+package com.motadata.websession.modules.credentials.handler;
 
 import com.motadata.websession.middleware.SessionAuthMiddleware;
 import io.vertx.core.Vertx;

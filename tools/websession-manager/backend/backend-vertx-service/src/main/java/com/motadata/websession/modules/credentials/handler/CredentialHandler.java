@@ -1,7 +1,7 @@
-package com.motadata.websession.credentials.handler;
+package com.motadata.websession.modules.credentials.handler;
 
 import com.motadata.websession.common.error.ApiException;
-import com.motadata.websession.credentials.service.CredentialService;
+import com.motadata.websession.modules.credentials.service.CredentialService;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.RoutingContext;

@@ -1,5 +1,6 @@
 package com.motadata.websession.crypto;
 
+import com.motadata.websession.modules.crypto.PasswordHasher;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 

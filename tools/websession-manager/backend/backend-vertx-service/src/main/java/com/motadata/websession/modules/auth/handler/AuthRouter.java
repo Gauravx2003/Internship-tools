@@ -1,4 +1,4 @@
-package com.motadata.websession.auth.handler;
+package com.motadata.websession.modules.auth.handler;
 
 import io.vertx.core.Vertx;
 import io.vertx.ext.web.Router;

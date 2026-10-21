@@ -1,7 +1,7 @@
-package com.motadata.websession.auth.middleware;
+package com.motadata.websession.middleware;
 
-import com.motadata.websession.auth.handler.AuthHandler;
-import com.motadata.websession.auth.service.AuthService;
+import com.motadata.websession.modules.auth.handler.AuthHandler;
+import com.motadata.websession.modules.auth.service.AuthService;
 import com.motadata.websession.common.error.ApiException;
 import io.vertx.core.Handler;
 import io.vertx.ext.web.RoutingContext;

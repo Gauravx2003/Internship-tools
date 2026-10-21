@@ -1,10 +1,10 @@
-package com.motadata.websession.auth.service;
+package com.motadata.websession.modules.auth.service;
 
-import com.motadata.websession.auth.repository.SessionRepository;
-import com.motadata.websession.auth.repository.UserRepository;
+import com.motadata.websession.modules.auth.repository.SessionRepository;
+import com.motadata.websession.modules.auth.repository.UserRepository;
 import com.motadata.websession.common.error.ApiException;
 import com.motadata.websession.config.AppConfig;
-import com.motadata.websession.crypto.PasswordHasher;
+import com.motadata.websession.modules.crypto.PasswordHasher;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;

@@ -1,6 +1,6 @@
-package com.motadata.websession.auth.handler;
+package com.motadata.websession.modules.auth.handler;
 
-import com.motadata.websession.auth.service.AuthService;
+import com.motadata.websession.modules.auth.service.AuthService;
 import com.motadata.websession.common.error.ApiException;
 import com.motadata.websession.config.AppConfig;
 import io.vertx.core.http.Cookie;

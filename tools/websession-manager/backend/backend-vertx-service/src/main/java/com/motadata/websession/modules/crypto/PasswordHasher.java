@@ -1,4 +1,4 @@
-package com.motadata.websession.crypto;
+package com.motadata.websession.modules.crypto;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

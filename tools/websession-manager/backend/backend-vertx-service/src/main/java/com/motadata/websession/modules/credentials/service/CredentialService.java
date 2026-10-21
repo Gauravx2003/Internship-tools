@@ -1,4 +1,4 @@
-package com.motadata.websession.credentials.service;
+package com.motadata.websession.modules.credentials.service;
 
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;

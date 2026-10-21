@@ -1,10 +1,9 @@
-package com.motadata.websession.credentials.repository;
+package com.motadata.websession.modules.credentials.repository;
 
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 import io.vertx.sqlclient.Pool;
 import io.vertx.sqlclient.Row;
-import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.Tuple;
 
 import java.time.Instant;

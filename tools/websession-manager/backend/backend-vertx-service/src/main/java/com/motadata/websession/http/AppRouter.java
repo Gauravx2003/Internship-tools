@@ -1,6 +1,8 @@
 package com.motadata.websession.http;
 
-import com.motadata.websession.auth.handler.AuthRouter;
+import com.motadata.websession.modules.auth.handler.AuthRouter;
+import com.motadata.websession.credentials.handler.CredentialRouter;
+import com.motadata.websession.modules.hosts.handler.HostRouter;
 import com.motadata.websession.middleware.CentralErrorHandler;
 import com.motadata.websession.middleware.RequestIdMiddleware;
 import io.vertx.core.Vertx;
@@ -13,7 +15,11 @@ import java.time.Instant;
 public class AppRouter
 {
 
-    public static Router create(Vertx vertx, AuthRouter authRouter)
+    public static Router create(
+        Vertx vertx,
+        AuthRouter authRouter,
+        HostRouter hostRouter,
+        CredentialRouter credentialRouter)
     {
         Router router = Router.router(vertx);
 
@@ -40,6 +46,10 @@ public class AppRouter
         });
 
         router.route("/api/v1/auth/*").subRouter(authRouter.create(vertx));
+
+        router.route("/api/v1/hosts/*").subRouter(hostRouter.create(vertx));
+
+        router.route("/api/v1/credentials/*").subRouter(credentialRouter.create(vertx));
 
         return router;
     }

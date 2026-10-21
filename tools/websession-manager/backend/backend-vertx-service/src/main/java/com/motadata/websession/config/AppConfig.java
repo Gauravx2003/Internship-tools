@@ -26,6 +26,8 @@ public class AppConfig
 
     private final boolean cookieSecure;
 
+    private final String encryptionKey;
+
     private AppConfig(
         int httpPort,
         String dbHost,
@@ -34,7 +36,8 @@ public class AppConfig
         String dbUser,
         String dbPassword,
         int sessionTimeoutMinutes,
-        boolean cookieSecure)
+        boolean cookieSecure,
+        String encryptionKey)
     {
         this.httpPort = httpPort;
 
@@ -51,6 +54,8 @@ public class AppConfig
         this.sessionTimeoutMinutes = sessionTimeoutMinutes;
 
         this.cookieSecure = cookieSecure;
+
+        this.encryptionKey = encryptionKey;
     }
 
     public static AppConfig load()
@@ -73,6 +78,8 @@ public class AppConfig
 
         boolean cookieSecure = Boolean.parseBoolean(getVal("COOKIE_SECURE", "false", dotEnv));
 
+        String encryptionKey = getVal("ENCRYPTION_KEY", "websession-default-master-key-32b!", dotEnv);
+
         return new AppConfig(
             httpPort,
             dbHost,
@@ -81,7 +88,8 @@ public class AppConfig
             dbUser,
             dbPassword,
             sessionTimeoutMinutes,
-            cookieSecure
+            cookieSecure,
+            encryptionKey
         );
     }
 
@@ -199,5 +207,10 @@ public class AppConfig
     public boolean isCookieSecure()
     {
         return cookieSecure;
+    }
+
+    public String getEncryptionKey()
+    {
+        return encryptionKey;
     }
 }

@@ -1,9 +1,9 @@
-package com.motadata.websession.credentials.service;
+package com.motadata.websession.modules.credentials.service;
 
 import com.motadata.websession.common.error.ApiException;
 import com.motadata.websession.config.AppConfig;
-import com.motadata.websession.credentials.repository.CredentialRepository;
-import com.motadata.websession.crypto.AesGcmEncryption;
+import com.motadata.websession.modules.crypto.AesGcmEncryption;
+import com.motadata.websession.modules.credentials.repository.CredentialRepository;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
