@@ -1,6 +1,11 @@
 ### Vert.x ###
 .vertx/
 
+### Environment & Secrets ###
+.env
+.env.local
+.env.*.local
+
 ### Eclipse ###
 
 .metadata
