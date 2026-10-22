@@ -32,9 +32,13 @@ public class SessionAuthMiddleware implements Handler<RoutingContext>
 
             .onSuccess(userJson ->
             {
+                String userId = userJson.getString("id");
+
                 ctx.put("currentUser", userJson);
 
-                ctx.put("userId", userJson.getString("id"));
+                ctx.put("user.id", userId);
+
+                ctx.put("userId", userId);
 
                 ctx.next();
             })

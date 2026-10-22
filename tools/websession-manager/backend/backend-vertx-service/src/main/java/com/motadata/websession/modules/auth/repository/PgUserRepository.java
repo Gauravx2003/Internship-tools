@@ -55,7 +55,7 @@ public class PgUserRepository implements UserRepository
 
             + "RETURNING id, username, password_hash, created_at, updated_at";
 
-        String createdAtStr = user.getString("createdAt");
+        String createdAtStr = user.getString("created.at");
 
         OffsetDateTime createdAt = createdAtStr != null
 
@@ -63,7 +63,7 @@ public class PgUserRepository implements UserRepository
 
             : OffsetDateTime.now(ZoneOffset.UTC);
 
-        String updatedAtStr = user.getString("updatedAt");
+        String updatedAtStr = user.getString("updated.at");
 
         OffsetDateTime updatedAt = updatedAtStr != null
 
@@ -134,8 +134,8 @@ public class PgUserRepository implements UserRepository
 
             .put("passwordHash", row.getString("password_hash"))
 
-            .put("createdAt", createdAt != null ? createdAt.toInstant().toString() : null)
+            .put("created.at", createdAt != null ? createdAt.toInstant().toString() : null)
 
-            .put("updatedAt", updatedAt != null ? updatedAt.toInstant().toString() : null);
+            .put("updated.at", updatedAt != null ? updatedAt.toInstant().toString() : null);
     }
 }

@@ -76,7 +76,7 @@ public class HostServiceImpl implements HostService
 
                     .put("id", hostId)
 
-                    .put("userId", userId)
+                    .put("user.id", userId)
 
                     .put("name", name.trim())
 
@@ -84,7 +84,7 @@ public class HostServiceImpl implements HostService
 
                     .put("port", port)
 
-                    .put("credentialId", credentialId)
+                    .put("credential.id", credentialId)
 
                     .put("color", payload.getString("color"))
 
@@ -98,9 +98,9 @@ public class HostServiceImpl implements HostService
 
                     .put("agentId", payload.getString("agentId"))
 
-                    .put("createdAt", now.toString())
+                    .put("created.at", now.toString())
 
-                    .put("updatedAt", now.toString());
+                    .put("updated.at", now.toString());
 
                 return hostRepository.create(hostRecord);
             });
@@ -137,11 +137,17 @@ public class HostServiceImpl implements HostService
                     return Future.succeededFuture(Optional.empty());
                 }
 
-                String credentialId = payload.containsKey("credentialId")
+                String credentialId = payload.getString("credential.id");
 
-                    ? payload.getString("credentialId")
+                if (credentialId == null)
+                {
+                    credentialId = payload.getString("credentialId");
+                }
 
-                    : existingOpt.get().getString("credentialId");
+                if (credentialId == null)
+                {
+                    credentialId = existingOpt.get().getString("credential.id");
+                }
 
                 JsonObject updateRecord = new JsonObject()
 
@@ -151,7 +157,7 @@ public class HostServiceImpl implements HostService
 
                     .put("port", payload.getInteger("port"))
 
-                    .put("credentialId", credentialId)
+                    .put("credential.id", credentialId)
 
                     .put("color", payload.getString("color"))
 
@@ -175,11 +181,18 @@ public class HostServiceImpl implements HostService
 
     private Future<String> resolveCredentialId(String userId, String hostName, JsonObject payload)
     {
-        String existingCredId = payload.getString("credentialId");
+        String rawCredId = payload.getString("credential.id");
 
-        if (existingCredId != null && !existingCredId.trim().isEmpty())
+        if (rawCredId == null)
         {
-            return credentialService.findById(existingCredId.trim(), userId)
+            rawCredId = payload.getString("credentialId");
+        }
+
+        String existingCredId = (rawCredId != null) ? rawCredId.trim() : null;
+
+        if (existingCredId != null && !existingCredId.isEmpty())
+        {
+            return credentialService.findById(existingCredId, userId)
 
                 .compose(credOpt ->
                 {
@@ -190,7 +203,7 @@ public class HostServiceImpl implements HostService
                         );
                     }
 
-                    return Future.succeededFuture(existingCredId.trim());
+                    return Future.succeededFuture(existingCredId);
                 });
         }
 

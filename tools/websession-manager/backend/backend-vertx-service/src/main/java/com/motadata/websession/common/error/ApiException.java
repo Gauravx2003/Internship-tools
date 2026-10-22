@@ -37,7 +37,7 @@ public class ApiException extends RuntimeException
 
             .put("message", getMessage())
 
-            .put("details", new JsonArray())
+            //.put("details", new JsonArray())
 
             .put("requestId", requestId != null ? requestId : "");
 

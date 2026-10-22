@@ -31,7 +31,7 @@ public class PgSessionRepository implements SessionRepository
 
             + "RETURNING id, user_id, created_at, expires_at, last_accessed_at";
 
-        String createdAtStr = session.getString("createdAt");
+        String createdAtStr = session.getString("created.at");
 
         OffsetDateTime createdAt = createdAtStr != null
 
@@ -39,7 +39,7 @@ public class PgSessionRepository implements SessionRepository
 
             : OffsetDateTime.now(ZoneOffset.UTC);
 
-        String expiresAtStr = session.getString("expiresAt");
+        String expiresAtStr = session.getString("expires.at");
 
         OffsetDateTime expiresAt = expiresAtStr != null
 
@@ -55,9 +55,16 @@ public class PgSessionRepository implements SessionRepository
 
             : createdAt;
 
+        String userId = session.getString("user.id");
+
+        if (userId == null)
+        {
+            userId = session.getString("userId");
+        }
+
         Tuple params = Tuple.of(
             session.getString("id"),
-            session.getString("userId"),
+            userId,
             createdAt,
             expiresAt,
             lastAccessedAt
@@ -143,15 +150,17 @@ public class PgSessionRepository implements SessionRepository
 
         OffsetDateTime lastAccessedAt = row.getOffsetDateTime("last_accessed_at");
 
+        String userId = row.getString("user_id");
+
         return new JsonObject()
 
             .put("id", row.getString("id"))
 
-            .put("userId", row.getString("user_id"))
+            .put("user.id", userId)
 
-            .put("createdAt", createdAt != null ? createdAt.toInstant().toString() : null)
+            .put("created.at", createdAt != null ? createdAt.toInstant().toString() : null)
 
-            .put("expiresAt", expiresAt != null ? expiresAt.toInstant().toString() : null)
+            .put("expires.at", expiresAt != null ? expiresAt.toInstant().toString() : null)
 
             .put("lastAccessedAt", lastAccessedAt != null ? lastAccessedAt.toInstant().toString() : null);
     }

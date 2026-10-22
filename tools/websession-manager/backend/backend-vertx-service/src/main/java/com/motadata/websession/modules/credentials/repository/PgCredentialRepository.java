@@ -32,7 +32,7 @@ public class PgCredentialRepository implements CredentialRepository
 
             + "RETURNING id, user_id, name, username, auth_type, encrypted_secret, created_at, updated_at";
 
-        String createdAtStr = credential.getString("createdAt");
+        String createdAtStr = credential.getString("created.at");
 
         OffsetDateTime createdAt = createdAtStr != null
 
@@ -40,7 +40,7 @@ public class PgCredentialRepository implements CredentialRepository
 
             : OffsetDateTime.now(ZoneOffset.UTC);
 
-        String updatedAtStr = credential.getString("updatedAt");
+        String updatedAtStr = credential.getString("updated.at");
 
         OffsetDateTime updatedAt = updatedAtStr != null
 
@@ -48,9 +48,16 @@ public class PgCredentialRepository implements CredentialRepository
 
             : OffsetDateTime.now(ZoneOffset.UTC);
 
+        String userId = credential.getString("user.id");
+
+        if (userId == null)
+        {
+            userId = credential.getString("userId");
+        }
+
         Tuple params = Tuple.of(
             credential.getString("id"),
-            credential.getString("userId"),
+            userId,
             credential.getString("name"),
             credential.getString("username"),
             credential.getString("authType", "password"),
@@ -135,11 +142,13 @@ public class PgCredentialRepository implements CredentialRepository
 
         OffsetDateTime updatedAt = row.getOffsetDateTime("updated_at");
 
+        String userId = row.getString("user_id");
+
         return new JsonObject()
 
             .put("id", row.getString("id"))
 
-            .put("userId", row.getString("user_id"))
+            .put("user.id", userId)
 
             .put("name", row.getString("name"))
 
@@ -149,8 +158,8 @@ public class PgCredentialRepository implements CredentialRepository
 
             .put("encryptedSecret", row.getString("encrypted_secret"))
 
-            .put("createdAt", createdAt != null ? createdAt.toInstant().toString() : null)
+            .put("created.at", createdAt != null ? createdAt.toInstant().toString() : null)
 
-            .put("updatedAt", updatedAt != null ? updatedAt.toInstant().toString() : null);
+            .put("updated.at", updatedAt != null ? updatedAt.toInstant().toString() : null);
     }
 }

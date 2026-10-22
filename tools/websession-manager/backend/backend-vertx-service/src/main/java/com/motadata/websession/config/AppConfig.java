@@ -166,6 +166,8 @@ public class AppConfig
             System.err.println("Notice: Could not read .env file: " + e.getMessage());
         }
 
+      //System.out.println(map);
+
         return map;
     }
 

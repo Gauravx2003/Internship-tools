@@ -93,7 +93,7 @@ public class CredentialServiceImpl implements CredentialService
 
                     .put("id", id)
 
-                    .put("userId", userId)
+                    .put("user.id", userId)
 
                     .put("name", name.trim())
 
@@ -103,9 +103,9 @@ public class CredentialServiceImpl implements CredentialService
 
                     .put("encryptedSecret", encryptedSecret)
 
-                    .put("createdAt", now.toString())
+                    .put("created.at", now.toString())
 
-                    .put("updatedAt", now.toString());
+                    .put("updated.at", now.toString());
 
                 return credentialRepository.create(credRecord)
 
@@ -180,8 +180,8 @@ public class CredentialServiceImpl implements CredentialService
 
             .put("authType", cred.getString("authType"))
 
-            .put("createdAt", cred.getString("createdAt"))
+            .put("created.at", cred.getString("created.at"))
 
-            .put("updatedAt", cred.getString("updatedAt"));
+            .put("updated.at", cred.getString("updated.at"));
     }
 }

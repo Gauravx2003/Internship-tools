@@ -1,10 +1,11 @@
 package com.motadata.websession.http;
 
-import com.motadata.websession.modules.auth.handler.AuthRouter;
-import com.motadata.websession.credentials.handler.CredentialRouter;
-import com.motadata.websession.modules.hosts.handler.HostRouter;
 import com.motadata.websession.middleware.CentralErrorHandler;
 import com.motadata.websession.middleware.RequestIdMiddleware;
+import com.motadata.websession.modules.auth.handler.AuthRouter;
+import com.motadata.websession.modules.credentials.handler.CredentialRouter;
+import com.motadata.websession.modules.hosts.handler.HostRouter;
+import com.motadata.websession.modules.keys.handler.KeyRouter;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
@@ -19,7 +20,8 @@ public class AppRouter
         Vertx vertx,
         AuthRouter authRouter,
         HostRouter hostRouter,
-        CredentialRouter credentialRouter)
+        CredentialRouter credentialRouter,
+        KeyRouter keyRouter)
     {
         Router router = Router.router(vertx);
 
@@ -50,6 +52,8 @@ public class AppRouter
         router.route("/api/v1/hosts/*").subRouter(hostRouter.create(vertx));
 
         router.route("/api/v1/credentials/*").subRouter(credentialRouter.create(vertx));
+
+        router.route("/api/v1/keys/*").subRouter(keyRouter.create(vertx));
 
         return router;
     }

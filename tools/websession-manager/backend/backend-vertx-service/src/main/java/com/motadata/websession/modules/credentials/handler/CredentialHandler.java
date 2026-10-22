@@ -18,7 +18,7 @@ public class CredentialHandler
 
     public void handleList(RoutingContext ctx)
     {
-        String userId = ctx.get("userId");
+        String userId = ctx.get("user.id") != null ? ctx.get("user.id") : ctx.get("userId");
 
         credentialService.list(userId)
 
@@ -38,7 +38,7 @@ public class CredentialHandler
 
     public void handleCreate(RoutingContext ctx)
     {
-        String userId = ctx.get("userId");
+        String userId = ctx.get("user.id") != null ? ctx.get("user.id") : ctx.get("userId");
 
         JsonObject body = ctx.body().asJsonObject();
 
@@ -67,7 +67,7 @@ public class CredentialHandler
 
     public void handleGet(RoutingContext ctx)
     {
-        String userId = ctx.get("userId");
+        String userId = ctx.get("user.id") != null ? ctx.get("user.id") : ctx.get("userId");
 
         String credId = ctx.pathParam("id");
 
@@ -96,7 +96,7 @@ public class CredentialHandler
 
     public void handleDelete(RoutingContext ctx)
     {
-        String userId = ctx.get("userId");
+        String userId = ctx.get("user.id") != null ? ctx.get("user.id") : ctx.get("userId");
 
         String credId = ctx.pathParam("id");
 

@@ -93,11 +93,11 @@ public class AuthServiceImpl implements AuthService
 
                             .put("id", sessionId)
 
-                            .put("userId", user.getString("id"))
+                            .put("user.id", user.getString("id"))
 
-                            .put("createdAt", now.toString())
+                            .put("created.at", now.toString())
 
-                            .put("expiresAt", expiresAt.toString())
+                            .put("expires.at", expiresAt.toString())
 
                             .put("lastAccessedAt", now.toString());
 
@@ -111,7 +111,7 @@ public class AuthServiceImpl implements AuthService
 
                                     .put("username", user.getString("username"))
 
-                                    .put("createdAt", user.getString("createdAt"));
+                                    .put("created.at", user.getString("created.at"));
 
                                 return new JsonObject()
 
@@ -159,7 +159,7 @@ public class AuthServiceImpl implements AuthService
 
                 JsonObject session = sessionOpt.get();
 
-                String expiresAtStr = session.getString("expiresAt");
+                String expiresAtStr = session.getString("expires.at");
 
                 if (expiresAtStr != null && Instant.now().isAfter(Instant.parse(expiresAtStr)))
                 {
@@ -172,7 +172,14 @@ public class AuthServiceImpl implements AuthService
 
                 sessionRepository.updateLastAccessed(session.getString("id"));
 
-                return userRepository.findById(session.getString("userId"))
+                String sessionUserId = session.getString("user.id");
+
+                if (sessionUserId == null)
+                {
+                    sessionUserId = session.getString("userId");
+                }
+
+                return userRepository.findById(sessionUserId)
 
                     .compose(userOpt ->
                     {
@@ -191,7 +198,7 @@ public class AuthServiceImpl implements AuthService
 
                             .put("username", user.getString("username"))
 
-                            .put("createdAt", user.getString("createdAt"));
+                            .put("created.at", user.getString("created.at"));
 
                         return Future.succeededFuture(safeUser);
                     });
@@ -237,9 +244,9 @@ public class AuthServiceImpl implements AuthService
 
                             .put("passwordHash", hashedPassword)
 
-                            .put("createdAt", now.toString())
+                            .put("created.at", now.toString())
 
-                            .put("updatedAt", now.toString());
+                            .put("updated.at", now.toString());
 
                         return userRepository.create(newUser)
 
@@ -249,7 +256,7 @@ public class AuthServiceImpl implements AuthService
 
                                 .put("username", createdUser.getString("username"))
 
-                                .put("createdAt", createdUser.getString("createdAt"))
+                                .put("created.at", createdUser.getString("created.at"))
                             );
                     });
             });

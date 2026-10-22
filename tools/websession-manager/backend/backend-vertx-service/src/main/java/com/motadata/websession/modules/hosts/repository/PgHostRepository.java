@@ -42,7 +42,7 @@ public class PgHostRepository implements HostRepository
 
             + "created_at, updated_at";
 
-        String createdAtStr = host.getString("createdAt");
+        String createdAtStr = host.getString("created.at");
 
         OffsetDateTime createdAt = createdAtStr != null
 
@@ -50,7 +50,7 @@ public class PgHostRepository implements HostRepository
 
             : OffsetDateTime.now(ZoneOffset.UTC);
 
-        String updatedAtStr = host.getString("updatedAt");
+        String updatedAtStr = host.getString("updated.at");
 
         OffsetDateTime updatedAt = updatedAtStr != null
 
@@ -58,13 +58,27 @@ public class PgHostRepository implements HostRepository
 
             : OffsetDateTime.now(ZoneOffset.UTC);
 
+        String userId = host.getString("user.id");
+
+        if (userId == null)
+        {
+            userId = host.getString("userId");
+        }
+
+        String credId = host.getString("credential.id");
+
+        if (credId == null)
+        {
+            credId = host.getString("credentialId");
+        }
+
         Tuple params = Tuple.of(
             host.getString("id"),
-            host.getString("userId"),
+            userId,
             host.getString("name"),
             host.getString("address"),
             host.getInteger("port", 22),
-            host.getString("credentialId"),
+            credId,
             host.getString("color"),
             host.getString("tags"),
             host.getBoolean("favorite", false),
@@ -188,11 +202,18 @@ public class PgHostRepository implements HostRepository
 
             + "created_at, updated_at";
 
+        String credId = host.getString("credential.id");
+
+        if (credId == null)
+        {
+            credId = host.getString("credentialId");
+        }
+
         Tuple params = Tuple.of(
             host.getString("name"),
             host.getString("address"),
             host.getInteger("port"),
-            host.getString("credentialId"),
+            credId,
             host.getString("color"),
             host.getString("tags"),
             host.getBoolean("favorite"),
@@ -235,11 +256,15 @@ public class PgHostRepository implements HostRepository
 
         OffsetDateTime updatedAt = row.getOffsetDateTime("updated_at");
 
+        String userId = row.getString("user_id");
+
+        String credId = row.getString("credential_id");
+
         return new JsonObject()
 
             .put("id", row.getString("id"))
 
-            .put("userId", row.getString("user_id"))
+            .put("user.id", userId)
 
             .put("name", row.getString("name"))
 
@@ -247,7 +272,7 @@ public class PgHostRepository implements HostRepository
 
             .put("port", row.getInteger("port"))
 
-            .put("credentialId", row.getString("credential_id"))
+            .put("credential.id", credId)
 
             .put("color", row.getString("color"))
 
@@ -261,9 +286,9 @@ public class PgHostRepository implements HostRepository
 
             .put("agentId", row.getString("agent_id"))
 
-            .put("createdAt", createdAt != null ? createdAt.toInstant().toString() : null)
+            .put("created.at", createdAt != null ? createdAt.toInstant().toString() : null)
 
-            .put("updatedAt", updatedAt != null ? updatedAt.toInstant().toString() : null);
+            .put("updated.at", updatedAt != null ? updatedAt.toInstant().toString() : null);
     }
 
     private JsonObject mapRowWithCredential(Row row)
