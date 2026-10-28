@@ -10,11 +10,15 @@ import com.motadata.websession.modules.auth.service.*;
 import com.motadata.websession.modules.credentials.handler.*;
 import com.motadata.websession.modules.credentials.repository.*;
 import com.motadata.websession.modules.credentials.service.*;
+import com.motadata.websession.modules.engine.channel.EngineChannel;
+import com.motadata.websession.modules.engine.channel.WebSocketEngineChannel;
 import com.motadata.websession.modules.hosts.handler.*;
 import com.motadata.websession.modules.hosts.repository.*;
 import com.motadata.websession.modules.hosts.service.*;
 import com.motadata.websession.modules.keys.handler.*;
 import com.motadata.websession.modules.keys.service.*;
+import com.motadata.websession.modules.terminal.registry.InMemoryTerminalSessionRegistry;
+import com.motadata.websession.modules.terminal.registry.TerminalSessionRegistry;
 import com.motadata.websession.persistence.DatabasePool;
 import io.vertx.core.Future;
 import io.vertx.core.VerticleBase;
@@ -24,11 +28,13 @@ import io.vertx.sqlclient.Pool;
 public class MainVerticle extends VerticleBase {
 
   private Pool dbPool;
+  private EngineChannel engineChannel;
 
   @Override
   public Future<?> start() {
     AppConfig config = AppConfig.load();
     this.dbPool = DatabasePool.create(vertx, config);
+    this.engineChannel = new WebSocketEngineChannel(vertx, config);
 
     Router appRouter = createAppRouter(config);
 
@@ -40,8 +46,9 @@ public class MainVerticle extends VerticleBase {
         System.out.println("===================================================");
         System.out.println(" 🔒 HTTPS SERVER RUNNING");
         System.out.println(" --------------------------------------------------");
-        System.out.println(" 🌐 Port:         " + port);
-        System.out.println(" 🏥 Health Check: https://localhost:" + port + "/api/health");
+        System.out.println(" 🌐 Port:               " + port);
+        System.out.println(" 🏥 Health Check:       http://localhost:" + port + "/health");
+        System.out.println(" 🔌 Engine Test WS:     ws://localhost:" + port + "/ws/test-engine");
         System.out.println("===================================================");
       })
       .onFailure(err -> System.err.println("Failed to start HTTP server: " + err.getMessage()));
@@ -49,10 +56,9 @@ public class MainVerticle extends VerticleBase {
 
   @Override
   public Future<?> stop() {
-    if (dbPool != null) {
-      return dbPool.close();
-    }
-    return Future.succeededFuture();
+    Future<Void> chFuture = engineChannel != null ? engineChannel.close() : Future.succeededFuture();
+    Future<Void> dbFuture = dbPool != null ? dbPool.close() : Future.succeededFuture();
+    return Future.all(chFuture, dbFuture);
   }
 
   /**
@@ -61,12 +67,14 @@ public class MainVerticle extends VerticleBase {
   private Router createAppRouter(AppConfig config) {
     // Repositories
     UserRepository userRepository = new PgUserRepository(dbPool);
-    SessionRepository sessionRepository = new PgSessionRepository(dbPool);
     CredentialRepository credentialRepository = new PgCredentialRepository(dbPool);
     HostRepository hostRepository = new PgHostRepository(dbPool);
 
-    // Services
-    AuthService authService = new AuthServiceImpl(vertx, userRepository, sessionRepository, config);
+    // Registries
+    TerminalSessionRegistry terminalSessionRegistry = new InMemoryTerminalSessionRegistry(vertx, config);
+
+    // Services (No auth_session table used - fixed expiry token + in-memory revocation denylist)
+    AuthService authService = new AuthServiceImpl(vertx, userRepository, terminalSessionRegistry, config);
     CredentialService credentialService = new CredentialServiceImpl(vertx, credentialRepository, config);
     HostService hostService = new HostServiceImpl(hostRepository, credentialService);
     KeyService keyService = new KeyServiceImpl(vertx, credentialService);
@@ -86,6 +94,6 @@ public class MainVerticle extends VerticleBase {
     HostRouter hostRouter = new HostRouter(hostHandler, sessionAuthMiddleware);
     KeyRouter keyRouter = new KeyRouter(keyHandler, sessionAuthMiddleware);
 
-    return AppRouter.create(vertx, authRouter, hostRouter, credentialRouter, keyRouter);
+    return AppRouter.create(vertx, authRouter, hostRouter, credentialRouter, keyRouter, engineChannel);
   }
 }
