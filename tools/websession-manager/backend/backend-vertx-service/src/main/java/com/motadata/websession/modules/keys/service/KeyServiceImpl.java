@@ -43,7 +43,7 @@ public class KeyServiceImpl implements KeyService
 
         String comment = username + "@websession";
 
-        int keySize = safePayload.getInteger("keySize", 3072);
+        int keySize = safePayload.getInteger("key.size", 3072);
 
         String finalName = name;
 
@@ -65,7 +65,7 @@ public class KeyServiceImpl implements KeyService
 
             .compose(generatedKey ->
             {
-                String privateKeyPem = generatedKey.getString("privateKey");
+                String privateKeyPem = generatedKey.getString("private.key");
 
                 JsonObject credPayload = new JsonObject()
 
@@ -91,11 +91,11 @@ public class KeyServiceImpl implements KeyService
 
                             .put("type", type)
 
-                            .put("publicKey", generatedKey.getString("publicKey"))
+                            .put("public.key", generatedKey.getString("public.key"))
 
                             .put("fingerprint", generatedKey.getString("fingerprint"))
 
-                            .put("privateKey", privateKeyPem);
+                            .put("private.key", privateKeyPem);
                     });
             });
     }

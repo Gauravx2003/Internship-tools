@@ -1,6 +1,7 @@
 package com.motadata.websession.modules.hosts.service;
 
 import com.motadata.websession.common.error.ApiException;
+import com.motadata.websession.common.validator.PayloadValidator;
 import com.motadata.websession.modules.credentials.service.CredentialService;
 import com.motadata.websession.modules.hosts.repository.HostRepository;
 import io.vertx.core.Future;
@@ -27,94 +28,52 @@ public class HostServiceImpl implements HostService
         this.credentialService = credentialService;
     }
 
-    @Override
-    public Future<JsonObject> create(String userId, JsonObject payload)
-    {
-        if (payload == null)
-        {
-            return Future.failedFuture(
-                new ApiException(400, "INVALID_REQUEST", "Payload cannot be null")
-            );
-        }
+     @Override
+     public Future<JsonObject> create(String userId, JsonObject payload)
+     {
 
-        String name = payload.getString("name");
+       return PayloadValidator.of(payload)
 
-        String address = payload.getString("address");
+         .requireNonEmpty("name","Host name is required")
 
-        String username = payload.getString("username");
+         .requireNonEmpty("address", "Address is required")
 
-        int port = payload.getInteger("port", 22);
+         .requireNonEmpty("username","Username is required")
 
-        if (name == null || name.trim().isEmpty())
-        {
-            return Future.failedFuture(
-                new ApiException(400, "INVALID_REQUEST", "Host name is required")
-            );
-        }
+         .requirePort("port",22,"Port must be between 1 and 65535")
 
-        if (address == null || address.trim().isEmpty())
-        {
-            return Future.failedFuture(
-                new ApiException(400, "INVALID_REQUEST", "Host address is required")
-            );
-        }
+         .validate()
 
-        if (port < 1 || port > 65535)
-        {
-            return Future.failedFuture(
-                new ApiException(400, "INVALID_REQUEST", "Port must be between 1 and 65535")
-            );
-        }
+         .compose(v->resolveCredentialId(userId,payload.getString("name"),payload))
 
-        if(username == null || username.trim().isEmpty())
-        {
-          return Future.failedFuture(
-              new ApiException(400, "INVALID_REQUEST", "Username is required"));
-        }
+         .compose(credentialId->
+         {
+           String hostId = UUID.randomUUID().toString();
 
+           Instant now = Instant.now();
 
+           JsonObject hostRecord = new JsonObject()
+             .put("id", hostId)
+             .put("user.id", userId)
+             .put("name", payload.getString("name").trim())
+             .put("address", payload.getString("address").trim())
+             .put("port", payload.getInteger("port", 22))
+             .put("credential.id", credentialId)
+             .put("color", payload.getString("color"))
+             .put("tags", payload.getString("tags"))
+             .put("favorite", payload.getBoolean("favorite", false))
+             .put("postConnectScript", payload.getString("postConnectScript"))
+             .put("loggingEnabled", payload.getBoolean("loggingEnabled", false))
+             .put("agentId", payload.getString("agentId"))
+             .put("created.at", now.toString())
+             .put("updated.at", now.toString());
 
-        return resolveCredentialId(userId, name, payload)
+           return hostRepository.create(hostRecord);
 
-            .compose(credentialId ->
-            {
-                String hostId = UUID.randomUUID().toString();
+         });
 
-                Instant now = Instant.now();
+     }
 
-                JsonObject hostRecord = new JsonObject()
-
-                    .put("id", hostId)
-
-                    .put("user.id", userId)
-
-                    .put("name", name.trim())
-
-                    .put("address", address.trim())
-
-                    .put("port", port)
-
-                    .put("credential.id", credentialId)
-
-                    .put("color", payload.getString("color"))
-
-                    .put("tags", payload.getString("tags"))
-
-                    .put("favorite", payload.getBoolean("favorite", false))
-
-                    .put("postConnectScript", payload.getString("postConnectScript"))
-
-                    .put("loggingEnabled", payload.getBoolean("loggingEnabled", false))
-
-                    .put("agentId", payload.getString("agentId"))
-
-                    .put("created.at", now.toString())
-
-                    .put("updated.at", now.toString());
-
-                return hostRepository.create(hostRecord);
-            });
-    }
 
     @Override
     public Future<Optional<JsonObject>> findById(String id, String userId)
@@ -216,6 +175,7 @@ public class HostServiceImpl implements HostService
                     return Future.succeededFuture(existingCredId);
                 });
         }
+
 
         String username = payload.getString("username");
 

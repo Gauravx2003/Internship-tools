@@ -152,7 +152,7 @@ public class AuthServiceImpl implements AuthService
 
                         JsonObject claims = new JsonObject()
                             .put("sub", userId)
-                            .put("userId", userId)
+                            .put("user.id", userId)
                             .put("username", user.getString("username"))
                             .put("created.at", user.getString("created.at"))
                             .put("jti", jti)
@@ -303,7 +303,7 @@ public class AuthServiceImpl implements AuthService
 
                 if (userId == null)
                 {
-                    userId = principal.getString("userId");
+                    userId = principal.getString("user.id");
                 }
 
                 JsonObject safeUser = new JsonObject()
@@ -347,7 +347,7 @@ public class AuthServiceImpl implements AuthService
                         JsonObject newUser = new JsonObject()
                             .put("id", userId)
                             .put("username", cleanUsername)
-                            .put("passwordHash", hashedPassword)
+                            .put("password.hash", hashedPassword)
                             .put("created.at", now.toString())
                             .put("updated.at", now.toString());
 

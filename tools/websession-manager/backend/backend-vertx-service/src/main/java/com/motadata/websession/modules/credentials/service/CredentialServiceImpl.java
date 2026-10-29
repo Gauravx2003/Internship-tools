@@ -1,6 +1,7 @@
 package com.motadata.websession.modules.credentials.service;
 
 import com.motadata.websession.common.error.ApiException;
+import com.motadata.websession.common.validator.PayloadValidator;
 import com.motadata.websession.config.AppConfig;
 import com.motadata.websession.modules.crypto.AesGcmEncryption;
 import com.motadata.websession.modules.credentials.repository.CredentialRepository;
@@ -35,83 +36,52 @@ public class CredentialServiceImpl implements CredentialService
         this.config = config;
     }
 
-    @Override
-    public Future<JsonObject> create(String userId, JsonObject payload)
-    {
-        if (payload == null)
-        {
-            return Future.failedFuture(
-                new ApiException(400, "INVALID_REQUEST", "Payload cannot be null")
-            );
-        }
+  @Override
+  public Future<JsonObject> create(String userId, JsonObject payload)
+  {
+    return PayloadValidator.of(payload)
 
-        String name = payload.getString("name");
+      .requireNonEmpty("name", "Credential name is required")
 
-        String username = payload.getString("username");
+      .requireNonEmpty("username", "Username is required")
 
-        String secret = payload.getString("password");
+      .requireAnyNonEmpty(List.of("password", "secret"), "Password or secret is required")
 
-        if (secret == null || secret.isEmpty())
-        {
-            secret = payload.getString("secret");
-        }
+      .validate()
 
-        if (name == null || name.trim().isEmpty())
-        {
-            return Future.failedFuture(
-                new ApiException(400, "INVALID_REQUEST", "Credential name is required")
-            );
-        }
+      .compose(v -> {
 
-        if (username == null || username.trim().isEmpty())
-        {
-            return Future.failedFuture(
-                new ApiException(400, "INVALID_REQUEST", "Username is required")
-            );
-        }
+        String secret = Optional.ofNullable(payload.getString("password"))
 
-        if (secret == null || secret.isEmpty())
-        {
-            return Future.failedFuture(
-                new ApiException(400, "INVALID_REQUEST", "Password or secret is required")
-            );
-        }
+          .filter(s -> !s.trim().isEmpty())
 
-        String authType = payload.getString("authType", "password");
+          .orElseGet(() -> payload.getString("secret"));
 
-        String finalSecret = secret;
+        return vertx.executeBlocking(() -> AesGcmEncryption.encrypt(secret, config.getEncryptionKey()));
 
-        return vertx.executeBlocking(() -> AesGcmEncryption.encrypt(finalSecret, config.getEncryptionKey()))
+      })
+      .compose(encryptedSecret -> {
 
-            .compose(encryptedSecret ->
-            {
-                String id = UUID.randomUUID().toString();
+        String id = UUID.randomUUID().toString();
 
-                Instant now = Instant.now();
+        Instant now = Instant.now();
 
-                JsonObject credRecord = new JsonObject()
+        JsonObject credRecord = new JsonObject()
+          .put("id", id)
+          .put("user.id", userId)
+          .put("name", payload.getString("name").trim())
+          .put("username", payload.getString("username").trim())
+          .put("authType", payload.getString("authType", "password"))
+          .put("encryptedSecret", encryptedSecret)
+          .put("created.at", now.toString())
+          .put("updated.at", now.toString());
 
-                    .put("id", id)
+        return credentialRepository.create(credRecord);
 
-                    .put("user.id", userId)
+      })
 
-                    .put("name", name.trim())
-
-                    .put("username", username.trim())
-
-                    .put("authType", authType)
-
-                    .put("encryptedSecret", encryptedSecret)
-
-                    .put("created.at", now.toString())
-
-                    .put("updated.at", now.toString());
-
-                return credentialRepository.create(credRecord)
-
-                    .map(this::sanitizeForClient);
-            });
-    }
+      .map(this::sanitizeForClient);
+  }
 
     @Override
     public Future<Optional<JsonObject>> findById(String id, String userId)

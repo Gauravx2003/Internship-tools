@@ -64,7 +64,7 @@ public class PgUserRepository implements UserRepository
         Tuple params = Tuple.of(
             user.getString("id"),
             user.getString("username"),
-            user.getString("passwordHash"),
+            user.getString("password.hash"),
             createdAt,
             updatedAt
         );

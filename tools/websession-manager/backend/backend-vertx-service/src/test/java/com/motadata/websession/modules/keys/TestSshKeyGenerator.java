@@ -19,7 +19,7 @@ public class TestSshKeyGenerator
 
         Assertions.assertEquals("ed25519", keyObj.getString("type"));
 
-        String pub = keyObj.getString("publicKey");
+        String pub = keyObj.getString("public.key");
 
         Assertions.assertNotNull(pub);
 
@@ -33,7 +33,7 @@ public class TestSshKeyGenerator
 
         Assertions.assertTrue(fp.startsWith("SHA256:"));
 
-        String priv = keyObj.getString("privateKey");
+        String priv = keyObj.getString("private.key");
 
         Assertions.assertNotNull(priv);
 
@@ -53,7 +53,7 @@ public class TestSshKeyGenerator
 
         Assertions.assertEquals("rsa", keyObj.getString("type"));
 
-        String pub = keyObj.getString("publicKey");
+        String pub = keyObj.getString("public.key");
 
         Assertions.assertNotNull(pub);
 
@@ -67,7 +67,7 @@ public class TestSshKeyGenerator
 
         Assertions.assertTrue(fp.startsWith("SHA256:"));
 
-        String priv = keyObj.getString("privateKey");
+        String priv = keyObj.getString("private.key");
 
         Assertions.assertNotNull(priv);
 

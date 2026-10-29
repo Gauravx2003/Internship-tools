@@ -45,11 +45,11 @@ public class SshKeyGenerator
 
             .put("type", "ed25519")
 
-            .put("publicKey", publicKey)
+            .put("public.key", publicKey)
 
             .put("fingerprint", fingerprint)
 
-            .put("privateKey", privateKeyPem);
+            .put("private.key", privateKeyPem);
     }
 
     public static JsonObject generateRsa(int keySize, String comment) throws Exception
@@ -88,11 +88,11 @@ public class SshKeyGenerator
 
             .put("keySize", validKeySize)
 
-            .put("publicKey", publicKey)
+            .put("public.key", publicKey)
 
             .put("fingerprint", fingerprint)
 
-            .put("privateKey", privateKeyPem);
+            .put("private.key", privateKeyPem);
     }
 
     private static String computeSha256Fingerprint(byte[] wireBytes) throws Exception
