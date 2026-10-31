@@ -1,7 +1,8 @@
 package com.motadata.websession.auth;
 
 import com.motadata.websession.config.AppConfig;
-import com.motadata.websession.modules.auth.repository.SessionRepository;
+import com.motadata.websession.modules.auth.repository.InMemoryRefreshTokenRepository;
+import com.motadata.websession.modules.auth.repository.RefreshTokenRepository;
 import com.motadata.websession.modules.auth.repository.UserRepository;
 import com.motadata.websession.modules.auth.service.AuthServiceImpl;
 import com.motadata.websession.modules.crypto.PasswordHasher;
@@ -16,7 +17,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.time.Instant;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @ExtendWith(VertxExtension.class)
@@ -35,21 +35,21 @@ public class TestAuthServiceCache
             .put("passwordHash", hash)
             .put("created.at", Instant.now().toString());
 
-        AtomicInteger findWithUserCallCount = new AtomicInteger(0);
-        AtomicInteger updateLastAccessedCallCount = new AtomicInteger(0);
-        AtomicBoolean sessionExists = new AtomicBoolean(true);
+        AtomicInteger userRepoFindCallCount = new AtomicInteger(0);
 
         UserRepository fakeUserRepo = new UserRepository()
         {
             @Override
             public Future<Optional<JsonObject>> findByUsername(String username)
             {
+                userRepoFindCallCount.incrementAndGet();
                 return Future.succeededFuture(Optional.of(fakeUser));
             }
 
             @Override
             public Future<Optional<JsonObject>> findById(String id)
             {
+                userRepoFindCallCount.incrementAndGet();
                 return Future.succeededFuture(Optional.of(fakeUser));
             }
 
@@ -64,104 +64,69 @@ public class TestAuthServiceCache
             {
                 return Future.succeededFuture(1L);
             }
-
-            @Override
-            public Future<Void> updateTokensValidAfter(String userId, Instant tokensValidAfter)
-            {
-                return Future.succeededFuture();
-            }
         };
 
-        SessionRepository fakeSessionRepo = new SessionRepository()
-        {
-            @Override
-            public Future<JsonObject> createSession(JsonObject session)
-            {
-                sessionExists.set(true);
-                return Future.succeededFuture(session);
-            }
-
-            @Override
-            public Future<Optional<JsonObject>> findById(String id)
-            {
-                return Future.succeededFuture(Optional.empty());
-            }
-
-            @Override
-            public Future<Optional<JsonObject>> findSessionWithUser(String id)
-            {
-                findWithUserCallCount.incrementAndGet();
-                if (!sessionExists.get())
-                {
-                    return Future.succeededFuture(Optional.empty());
-                }
-                return Future.succeededFuture(Optional.of(new JsonObject()
-                    .put("sessionId", id)
-                    .put("expiresAt", Instant.now().plusSeconds(3600).toString())
-                    .put("user", fakeUser)));
-            }
-
-            @Override
-            public Future<Void> updateLastAccessed(String id)
-            {
-                updateLastAccessedCallCount.incrementAndGet();
-                return Future.succeededFuture();
-            }
-
-            @Override
-            public Future<Boolean> deleteById(String id)
-            {
-                sessionExists.set(false);
-                return Future.succeededFuture(true);
-            }
-
-            @Override
-            public Future<Integer> deleteExpired()
-            {
-                return Future.succeededFuture(0);
-            }
-        };
-
+        RefreshTokenRepository refreshTokenRepo = new InMemoryRefreshTokenRepository();
         AppConfig config = AppConfig.load();
-        AuthServiceImpl authService = new AuthServiceImpl(vertx, fakeUserRepo, fakeSessionRepo, config);
+        AuthServiceImpl authService = new AuthServiceImpl(vertx, fakeUserRepo, refreshTokenRepo, config);
 
         authService.login("cacheduser", password)
             .compose(loginResult ->
             {
-                String token = loginResult.getString("token");
-                Assertions.assertNotNull(token);
+                String accessToken = loginResult.getString("accessToken");
+                String refreshToken = loginResult.getString("refreshToken");
 
-                // 1st authenticateSession call -> MUST hit memory cache, findWithUserCallCount remains 0
-                return authService.authenticateSession(token)
+                Assertions.assertNotNull(accessToken);
+                Assertions.assertNotNull(refreshToken);
+
+                int callsAfterLogin = userRepoFindCallCount.get();
+
+                // 1st authenticateSession call -> Access token is verified statelessly, user repo find count does not increment
+                return authService.authenticateSession(accessToken)
                     .compose(user1 ->
                     {
                         Assertions.assertEquals("cacheduser", user1.getString("username"));
-                        Assertions.assertEquals(0, findWithUserCallCount.get(), "Database must not be queried on cache hit");
-                        Assertions.assertEquals(0, updateLastAccessedCallCount.get(), "Throttled: DB write must not happen on immediate hit");
+                        Assertions.assertEquals(callsAfterLogin, userRepoFindCallCount.get(), "Database must not be queried on stateless access token verification");
 
-                        // 2nd authenticateSession call -> MUST still hit memory cache without DB query
-                        return authService.authenticateSession(token);
+                        // 2nd authenticateSession call -> Still verified statelessly without DB query
+                        return authService.authenticateSession(accessToken);
                     })
                     .compose(user2 ->
                     {
                         Assertions.assertEquals("cacheduser", user2.getString("username"));
-                        Assertions.assertEquals(0, findWithUserCallCount.get(), "Database must still not be queried");
-                        Assertions.assertEquals(0, updateLastAccessedCallCount.get());
+                        Assertions.assertEquals(callsAfterLogin, userRepoFindCallCount.get(), "Database must still not be queried");
 
-                        // Logout -> revokes token via denylist
-                        return authService.logout(token)
-                            .compose(v -> authService.authenticateSession(token))
+                        // Refresh token rotation: exchange refreshToken for new pair
+                        return authService.refreshToken(refreshToken);
+                    })
+                    .compose(refreshResult ->
+                    {
+                        String newAccessToken = refreshResult.getString("accessToken");
+                        String newRefreshToken = refreshResult.getString("refreshToken");
+
+                        Assertions.assertNotNull(newAccessToken);
+                        Assertions.assertNotNull(newRefreshToken);
+                        Assertions.assertNotEquals(refreshToken, newRefreshToken);
+
+                        // Old refresh token must now be revoked
+                        return authService.refreshToken(refreshToken)
                             .map(u -> false)
-                            .recover(err ->
+                            .recover(err -> Future.succeededFuture(true))
+                            .compose(oldRejected ->
                             {
-                                // Session is invalid/revoked now
-                                return Future.succeededFuture(true);
+                                Assertions.assertTrue(oldRejected, "Reusing old rotated refresh token must fail");
+
+                                // Logout using new refresh token
+                                return authService.logout(newAccessToken, newRefreshToken)
+                                    .compose(v -> authService.refreshToken(newRefreshToken))
+                                    .map(u -> false)
+                                    .recover(err -> Future.succeededFuture(true));
                             });
                     });
             })
             .onComplete(testContext.succeeding(res ->
             {
-                testContext.verify(() -> Assertions.assertTrue(res));
+                testContext.verify(() -> Assertions.assertTrue(res, "Revoked refresh token must fail after logout"));
                 testContext.completeNow();
             }));
     }

@@ -187,18 +187,19 @@ public class TestTerminalSessionAuthIntegration
         authService.login("logoutuser", password)
             .compose(loginResult ->
             {
-                String token = loginResult.getString("token");
+                String accessToken = loginResult.getString("accessToken");
+                String refreshToken = loginResult.getString("refreshToken");
 
                 // Explicit 'logout and close all'
-                return authService.logoutAndCloseSessions(token)
-                    .compose(v -> authService.authenticateSession(token).map(u -> false).recover(err -> Future.succeededFuture(true)));
+                return authService.logoutAndCloseSessions(accessToken, refreshToken)
+                    .compose(v -> authService.refreshToken(refreshToken).map(u -> false).recover(err -> Future.succeededFuture(true)));
             })
-            .onComplete(testContext.succeeding(tokenInvalidated ->
+            .onComplete(testContext.succeeding(refreshInvalidated ->
             {
                 testContext.verify(() ->
                 {
-                    // 1. Token is revoked
-                    Assertions.assertTrue(tokenInvalidated, "Token must be revoked");
+                    // 1. Refresh token is revoked
+                    Assertions.assertTrue(refreshInvalidated, "Refresh token must be revoked after logout");
 
                     // 2. In-map terminal sessions for this user are completely cleared
                     Assertions.assertEquals(0, registry.getActiveSessionCountForUser(userId),
@@ -265,18 +266,19 @@ public class TestTerminalSessionAuthIntegration
         authService.login("stduser", password)
             .compose(loginResult ->
             {
-                String token = loginResult.getString("token");
+                String accessToken = loginResult.getString("accessToken");
+                String refreshToken = loginResult.getString("refreshToken");
 
                 // Plain logout (closeAll = false)
-                return authService.logout(token)
-                    .compose(v -> authService.authenticateSession(token).map(u -> false).recover(err -> Future.succeededFuture(true)));
+                return authService.logout(accessToken, refreshToken)
+                    .compose(v -> authService.refreshToken(refreshToken).map(u -> false).recover(err -> Future.succeededFuture(true)));
             })
-            .onComplete(testContext.succeeding(authFailed ->
+            .onComplete(testContext.succeeding(refreshFailed ->
             {
                 testContext.verify(() ->
                 {
-                    // Token is revoked in denylist
-                    Assertions.assertTrue(authFailed, "Auth token must be invalidated after plain logout");
+                    // Refresh token is revoked from database
+                    Assertions.assertTrue(refreshFailed, "Refresh token must be invalidated after plain logout");
 
                     // Crucially, live terminal session is STILL ACTIVE
                     Assertions.assertEquals(1, registry.getActiveSessionCountForUser(userId),
@@ -289,7 +291,7 @@ public class TestTerminalSessionAuthIntegration
     }
 
     @Test
-    void testRevokedTokenRejectedAfterLogoutAndCloseSessions(Vertx vertx, VertxTestContext testContext)
+    void testRefreshTokenRotationAndRejectionAfterLogout(Vertx vertx, VertxTestContext testContext)
     {
         String password = "StrongPassword@123";
         String hash = PasswordHasher.hash(password);
@@ -335,20 +337,42 @@ public class TestTerminalSessionAuthIntegration
         authService.login("tvauser", password)
             .compose(loginResult ->
             {
-                String token = loginResult.getString("token");
+                String accessToken = loginResult.getString("accessToken");
+                String refreshToken = loginResult.getString("refreshToken");
 
-                // Authenticate works initially
-                return authService.authenticateSession(token)
+                // 1. Authenticate session with access token works
+                return authService.authenticateSession(accessToken)
                     .compose(u ->
                     {
                         Assertions.assertEquals("tvauser", u.getString("username"));
 
-                        // Simulate explicit "logout and close all"
-                        return authService.logoutAndCloseSessions(token);
+                        // 2. Refresh token rotation: exchange old refresh token for new access + refresh tokens
+                        return authService.refreshToken(refreshToken);
                     })
-                    .compose(v -> authService.authenticateSession(token))
-                    .map(u -> false)
-                    .recover(err -> Future.succeededFuture(true));
+                    .compose(rotated ->
+                    {
+                        String rotatedAccess = rotated.getString("accessToken");
+                        String rotatedRefresh = rotated.getString("refreshToken");
+
+                        Assertions.assertNotNull(rotatedAccess);
+                        Assertions.assertNotNull(rotatedRefresh);
+                        Assertions.assertNotEquals(refreshToken, rotatedRefresh, "Refresh token must be rotated");
+
+                        // 3. Trying to reuse OLD refresh token must fail with 401
+                        return authService.refreshToken(refreshToken)
+                            .map(u -> false)
+                            .recover(err -> Future.succeededFuture(true))
+                            .compose(oldTokenRejected ->
+                            {
+                                Assertions.assertTrue(oldTokenRejected, "Old rotated refresh token must be rejected");
+
+                                // 4. Logout and close sessions using the rotated refresh token
+                                return authService.logoutAndCloseSessions(rotatedAccess, rotatedRefresh)
+                                    .compose(v -> authService.refreshToken(rotatedRefresh))
+                                    .map(u -> false)
+                                    .recover(err -> Future.succeededFuture(true));
+                            });
+                    });
             })
             .onComplete(testContext.succeeding(rejected ->
             {

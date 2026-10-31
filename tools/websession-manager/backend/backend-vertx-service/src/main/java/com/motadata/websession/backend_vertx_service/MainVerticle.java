@@ -67,14 +67,15 @@ public class MainVerticle extends VerticleBase {
   private Router createAppRouter(AppConfig config) {
     // Repositories
     UserRepository userRepository = new PgUserRepository(dbPool);
+    RefreshTokenRepository refreshTokenRepository = new PgRefreshTokenRepository(dbPool);
     CredentialRepository credentialRepository = new PgCredentialRepository(dbPool);
     HostRepository hostRepository = new PgHostRepository(dbPool);
 
     // Registries
     TerminalSessionRegistry terminalSessionRegistry = new InMemoryTerminalSessionRegistry(vertx, config);
 
-    // Services (No auth_session table used - fixed expiry token + in-memory revocation denylist)
-    AuthService authService = new AuthServiceImpl(vertx, userRepository, terminalSessionRegistry, config);
+    // Services (Short-lived access token + DB-backed refresh token with rotation)
+    AuthService authService = new AuthServiceImpl(vertx, userRepository, refreshTokenRepository, terminalSessionRegistry, config);
     CredentialService credentialService = new CredentialServiceImpl(vertx, credentialRepository, config);
     HostService hostService = new HostServiceImpl(hostRepository, credentialService);
     KeyService keyService = new KeyServiceImpl(vertx, credentialService);

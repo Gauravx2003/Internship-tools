@@ -19,6 +19,8 @@ public class AuthRouter
 
         router.post("/login").handler(authHandler::handleLogin);
 
+        router.post("/refresh").handler(authHandler::handleRefreshToken);
+
         router.post("/logout").handler(authHandler::handleLogout);
 
         router.get("/me").handler(authHandler::handleMe);

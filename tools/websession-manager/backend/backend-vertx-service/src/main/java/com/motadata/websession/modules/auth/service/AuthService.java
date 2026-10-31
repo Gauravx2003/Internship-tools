@@ -9,9 +9,15 @@ public interface AuthService
 
     Future<JsonObject> login(String username, String password);
 
+    Future<JsonObject> refreshToken(String refreshToken);
+
     Future<Void> logout(String sessionId);
 
+    Future<Void> logout(String accessToken, String refreshToken);
+
     Future<Void> logoutAndCloseSessions(String sessionId);
+
+    Future<Void> logoutAndCloseSessions(String accessToken, String refreshToken);
 
     Future<JsonObject> authenticateSession(String sessionId);
 

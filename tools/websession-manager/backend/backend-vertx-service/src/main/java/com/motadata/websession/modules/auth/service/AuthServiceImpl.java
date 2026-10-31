@@ -2,6 +2,8 @@ package com.motadata.websession.modules.auth.service;
 
 import com.motadata.websession.common.error.ApiException;
 import com.motadata.websession.config.AppConfig;
+import com.motadata.websession.modules.auth.repository.InMemoryRefreshTokenRepository;
+import com.motadata.websession.modules.auth.repository.RefreshTokenRepository;
 import com.motadata.websession.modules.auth.repository.SessionRepository;
 import com.motadata.websession.modules.auth.repository.UserRepository;
 import com.motadata.websession.modules.crypto.PasswordHasher;
@@ -22,9 +24,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.HexFormat;
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class AuthServiceImpl implements AuthService
 {
@@ -32,6 +32,8 @@ public class AuthServiceImpl implements AuthService
     private final Vertx vertx;
 
     private final UserRepository userRepository;
+
+    private final RefreshTokenRepository refreshTokenRepository;
 
     private final TerminalSessionRegistry terminalSessionRegistry;
 
@@ -41,20 +43,20 @@ public class AuthServiceImpl implements AuthService
 
     private final JWTAuth jwtAuth;
 
-    // In-memory token revocation denylist: JTI / token -> expiry time
-    private final Map<String, Instant> tokenDenylist = new ConcurrentHashMap<>();
-
-    private static final long EXPIRED_CLEANUP_INTERVAL_MS = 60 * 1000; // 1 minute cleanup
-
     public AuthServiceImpl(
         Vertx vertx,
         UserRepository userRepository,
+        RefreshTokenRepository refreshTokenRepository,
         TerminalSessionRegistry terminalSessionRegistry,
         AppConfig config)
     {
         this.vertx = vertx;
 
         this.userRepository = userRepository;
+
+        this.refreshTokenRepository = refreshTokenRepository != null
+            ? refreshTokenRepository
+            : new InMemoryRefreshTokenRepository();
 
         this.terminalSessionRegistry = terminalSessionRegistry != null
             ? terminalSessionRegistry
@@ -71,9 +73,26 @@ public class AuthServiceImpl implements AuthService
 
         this.jwtAuth = JWTAuth.create(vertx, jwtAuthOptions);
 
-        // Background periodic cleaner for expired denylist entries.
-        // Token expiration does not affect ongoing live terminal sessions.
-        this.vertx.setPeriodic(EXPIRED_CLEANUP_INTERVAL_MS, id -> cleanExpired());
+        // Periodically purge expired refresh tokens from repository
+        this.vertx.setPeriodic(60 * 60 * 1000L, id -> this.refreshTokenRepository.deleteExpired());
+    }
+
+    public AuthServiceImpl(
+        Vertx vertx,
+        UserRepository userRepository,
+        RefreshTokenRepository refreshTokenRepository,
+        AppConfig config)
+    {
+        this(vertx, userRepository, refreshTokenRepository, new InMemoryTerminalSessionRegistry(vertx, config), config);
+    }
+
+    public AuthServiceImpl(
+        Vertx vertx,
+        UserRepository userRepository,
+        TerminalSessionRegistry terminalSessionRegistry,
+        AppConfig config)
+    {
+        this(vertx, userRepository, new InMemoryRefreshTokenRepository(), terminalSessionRegistry, config);
     }
 
     public AuthServiceImpl(
@@ -81,7 +100,7 @@ public class AuthServiceImpl implements AuthService
         UserRepository userRepository,
         AppConfig config)
     {
-        this(vertx, userRepository, new InMemoryTerminalSessionRegistry(vertx, config), config);
+        this(vertx, userRepository, new InMemoryRefreshTokenRepository(), new InMemoryTerminalSessionRegistry(vertx, config), config);
     }
 
     @Deprecated
@@ -92,7 +111,7 @@ public class AuthServiceImpl implements AuthService
         TerminalSessionRegistry terminalSessionRegistry,
         AppConfig config)
     {
-        this(vertx, userRepository, terminalSessionRegistry, config);
+        this(vertx, userRepository, new InMemoryRefreshTokenRepository(), terminalSessionRegistry, config);
     }
 
     @Deprecated
@@ -102,7 +121,7 @@ public class AuthServiceImpl implements AuthService
         SessionRepository sessionRepository,
         AppConfig config)
     {
-        this(vertx, userRepository, new InMemoryTerminalSessionRegistry(vertx, config), config);
+        this(vertx, userRepository, new InMemoryRefreshTokenRepository(), new InMemoryTerminalSessionRegistry(vertx, config), config);
     }
 
     @Override
@@ -143,118 +162,219 @@ public class AuthServiceImpl implements AuthService
 
                         String userId = user.getString("id");
 
-                        String jti = generateSecureSessionId();
-
                         JsonObject safeUser = new JsonObject()
                             .put("id", userId)
                             .put("username", user.getString("username"))
                             .put("created.at", user.getString("created.at"));
 
-                        JsonObject claims = new JsonObject()
-                            .put("sub", userId)
-                            .put("user.id", userId)
-                            .put("username", user.getString("username"))
-                            .put("created.at", user.getString("created.at"))
-                            .put("jti", jti)
-                            .put("jit", jti);
+                        String accessToken = generateAccessToken(user);
 
-                        JWTOptions jwtOptions = new JWTOptions()
-                            .setExpiresInMinutes(config.getTokenTtlMinutes());
+                        String refreshToken = generateSecureToken();
 
-                        String token = jwtAuth.generateToken(claims, jwtOptions);
+                        Instant refreshExpiresAt = Instant.now().plus(config.getRefreshTokenTtlDays(), ChronoUnit.DAYS);
 
-                        return Future.succeededFuture(new JsonObject()
-                            .put("user", safeUser)
-                            .put("token", token));
+                        JsonObject rtRecord = new JsonObject()
+                            .put("id", UUID.randomUUID().toString())
+                            .put("userId", userId)
+                            .put("token", refreshToken)
+                            .put("expiresAt", refreshExpiresAt.toString())
+                            .put("createdAt", Instant.now().toString());
+
+                        return refreshTokenRepository.create(rtRecord)
+                            .map(saved -> new JsonObject()
+                                .put("user", safeUser)
+                                .put("accessToken", accessToken)
+                                .put("refreshToken", refreshToken)
+                            );
                     });
             });
     }
 
-    /**
-     * Plain logout (closeAll = false):
-     * Revokes the token only via in-memory denylist tracking JTI.
-     * Ongoing live terminal sessions keep running.
-     */
+    @Override
+    public Future<JsonObject> refreshToken(String refreshToken)
+    {
+        if (refreshToken == null || refreshToken.trim().isEmpty())
+        {
+            return Future.failedFuture(
+                new ApiException(400, "INVALID_REQUEST", "Refresh token is required")
+            );
+        }
+
+        String cleanToken = refreshToken.trim();
+
+        return refreshTokenRepository.findByToken(cleanToken)
+            .compose(tokenOpt ->
+            {
+                if (tokenOpt.isEmpty())
+                {
+                    return Future.failedFuture(
+                        new ApiException(401, "UNAUTHORIZED", "Invalid or expired refresh token")
+                    );
+                }
+
+                JsonObject record = tokenOpt.get();
+
+                String expiresAtStr = record.getString("expiresAt");
+
+                if (expiresAtStr == null)
+                {
+                    expiresAtStr = record.getString("expires_at");
+                }
+
+                Instant expiresAt = Instant.parse(expiresAtStr);
+
+                if (Instant.now().isAfter(expiresAt))
+                {
+                    return refreshTokenRepository.deleteByToken(cleanToken)
+                        .compose(v -> Future.failedFuture(
+                            new ApiException(401, "UNAUTHORIZED", "Refresh token has expired")
+                        ));
+                }
+
+                String userId = record.getString("userId");
+
+                if (userId == null)
+                {
+                    userId = record.getString("user_id");
+                }
+
+                final String finalUserId = userId;
+
+                // Rotate refresh token: Invalidate the used refresh token immediately upon use
+                return refreshTokenRepository.deleteByToken(cleanToken)
+                    .compose(deleted -> userRepository.findById(finalUserId))
+                    .compose(userOpt ->
+                    {
+                        if (userOpt.isEmpty())
+                        {
+                            return Future.failedFuture(
+                                new ApiException(401, "UNAUTHORIZED", "User not found")
+                            );
+                        }
+
+                        JsonObject user = userOpt.get();
+
+                        JsonObject safeUser = new JsonObject()
+                            .put("id", user.getString("id"))
+                            .put("username", user.getString("username"))
+                            .put("created.at", user.getString("created.at"));
+
+                        String newAccessToken = generateAccessToken(user);
+
+                        String newRefreshToken = generateSecureToken();
+
+                        Instant newExpiresAt = Instant.now().plus(config.getRefreshTokenTtlDays(), ChronoUnit.DAYS);
+
+                        JsonObject newRecord = new JsonObject()
+                            .put("id", UUID.randomUUID().toString())
+                            .put("userId", user.getString("id"))
+                            .put("token", newRefreshToken)
+                            .put("expiresAt", newExpiresAt.toString())
+                            .put("createdAt", Instant.now().toString());
+
+                        return refreshTokenRepository.create(newRecord)
+                            .map(saved -> new JsonObject()
+                                .put("user", safeUser)
+                                .put("token", newAccessToken)
+                                .put("accessToken", newAccessToken)
+                                .put("refreshToken", newRefreshToken)
+                            );
+                    });
+            });
+    }
+
     @Override
     public Future<Void> logout(String sessionId)
     {
-        if (sessionId == null || sessionId.trim().isEmpty())
-        {
-            return Future.succeededFuture();
-        }
-
-        String cleanToken = sessionId.trim();
-
-        String jti = extractJti(cleanToken);
-
-        Instant expiry = extractExpiry(cleanToken);
-
-        String userId = extractUserId(cleanToken);
-
-        tokenDenylist.put(cleanToken, expiry);
-
-        if (jti != null)
-        {
-            tokenDenylist.put(jti, expiry);
-        }
-
-        System.out.println("[AUDIT] Plain logout: revoked token (jti=" + jti
-            + ") for user " + (userId != null ? userId : "unknown") + ". Live terminals keep running.");
-
-        return Future.succeededFuture();
+        return logout(sessionId, null);
     }
 
-    /**
-     * Explicit "logout and close all" (closeAll = true):
-     * Revokes the token via in-memory denylist tracking JTI,
-     * closes ALL live terminal sessions of that user, and logs audit events.
-     */
+    @Override
+    public Future<Void> logout(String accessToken, String refreshToken)
+    {
+        Future<Void> deleteRt = Future.succeededFuture();
+
+        if (refreshToken != null && !refreshToken.trim().isEmpty())
+        {
+            deleteRt = refreshTokenRepository.deleteByToken(refreshToken.trim()).mapEmpty();
+        }
+
+        if (accessToken != null && !accessToken.trim().isEmpty())
+        {
+            String cleanAccess = accessToken.trim();
+
+            String userId = extractUserId(cleanAccess);
+
+            if (userId != null)
+            {
+                return deleteRt.compose(v -> refreshTokenRepository.deleteByUserId(userId)).mapEmpty();
+            }
+            else if (refreshToken == null || refreshToken.trim().isEmpty())
+            {
+                // In case sessionId passed is a refresh token
+                return refreshTokenRepository.deleteByToken(cleanAccess).mapEmpty();
+            }
+        }
+
+        return deleteRt;
+    }
+
     @Override
     public Future<Void> logoutAndCloseSessions(String sessionId)
     {
-        if (sessionId == null || sessionId.trim().isEmpty())
+        return logoutAndCloseSessions(sessionId, null);
+    }
+
+    @Override
+    public Future<Void> logoutAndCloseSessions(String accessToken, String refreshToken)
+    {
+        String userId = null;
+
+        if (accessToken != null && !accessToken.trim().isEmpty())
         {
-            return Future.succeededFuture();
-        }
-
-        String cleanToken = sessionId.trim();
-
-        String jti = extractJti(cleanToken);
-
-        Instant expiry = extractExpiry(cleanToken);
-
-        String userId = extractUserId(cleanToken);
-
-        tokenDenylist.put(cleanToken, expiry);
-
-        if (jti != null)
-        {
-            tokenDenylist.put(jti, expiry);
+            userId = extractUserId(accessToken.trim());
         }
 
         if (userId != null)
         {
-            final String uid = userId;
+            final String finalUserId = userId;
 
-            final String finalJti = jti;
-
-            // Close ALL live terminal sessions of that user
-            return terminalSessionRegistry.closeAllSessionsForUser(uid, "explicit_logout_close_all")
-                .onSuccess(count ->
-                {
-                    System.out.println("[AUDIT] User " + uid
-                        + " executed 'logout and close all': token revoked (jti=" + finalJti + "), and "
-                        + count + " live terminal session(s) closed.");
-                })
+            return refreshTokenRepository.deleteByUserId(finalUserId)
+                .compose(v -> terminalSessionRegistry.closeAllSessionsForUser(finalUserId, "explicit_logout_close_all"))
                 .mapEmpty();
+        }
+
+        // If userId was not found in accessToken, check if refreshToken provides userId
+        String tokenToCheck = (refreshToken != null && !refreshToken.trim().isEmpty())
+            ? refreshToken.trim()
+            : (accessToken != null ? accessToken.trim() : null);
+
+        if (tokenToCheck != null)
+        {
+            return refreshTokenRepository.findByToken(tokenToCheck)
+                .compose(opt ->
+                {
+                    if (opt.isPresent())
+                    {
+                        JsonObject rec = opt.get();
+
+                        String uid = rec.getString("userId", rec.getString("user_id"));
+
+                        return refreshTokenRepository.deleteByUserId(uid)
+                            .compose(v -> terminalSessionRegistry.closeAllSessionsForUser(uid, "explicit_logout_close_all"))
+                            .mapEmpty();
+                    }
+
+                    return refreshTokenRepository.deleteByToken(tokenToCheck).mapEmpty();
+                });
         }
 
         return Future.succeededFuture();
     }
 
     /**
-     * Authenticates the login JWT token without hitting the database on requests.
-     * Rejects revoked or expired tokens with 401 UNAUTHORIZED.
+     * Authenticates the access token statelessly without hitting the database.
+     * Rejects expired or invalid tokens with 401 UNAUTHORIZED.
      */
     @Override
     public Future<JsonObject> authenticateSession(String sessionId)
@@ -268,14 +388,6 @@ public class AuthServiceImpl implements AuthService
 
         String cleanToken = sessionId.trim();
 
-        // Check if raw token string is in denylist
-        if (tokenDenylist.containsKey(cleanToken))
-        {
-            return Future.failedFuture(
-                new ApiException(401, "UNAUTHORIZED", "Session has been revoked")
-            );
-        }
-
         return jwtAuth.authenticate(new TokenCredentials(cleanToken))
             .recover(err -> Future.failedFuture(
                 new ApiException(401, "UNAUTHORIZED", "Session expired or invalid")
@@ -284,18 +396,12 @@ public class AuthServiceImpl implements AuthService
             {
                 JsonObject principal = user.principal();
 
-                String jti = principal.getString("jti");
+                String type = principal.getString("type");
 
-                if (jti == null)
-                {
-                    jti = principal.getString("jit");
-                }
-
-                // Check denylist for JTI
-                if (jti != null && tokenDenylist.containsKey(jti))
+                if ("refresh".equalsIgnoreCase(type))
                 {
                     return Future.failedFuture(
-                        new ApiException(401, "UNAUTHORIZED", "Session has been revoked")
+                        new ApiException(401, "UNAUTHORIZED", "Invalid token type")
                     );
                 }
 
@@ -367,15 +473,28 @@ public class AuthServiceImpl implements AuthService
         return this.terminalSessionRegistry;
     }
 
-    private void cleanExpired()
+    private String generateAccessToken(JsonObject user)
     {
-        Instant now = Instant.now();
+        String userId = user.getString("id");
 
-        // Clean expired denylist entries; ongoing live terminal sessions are NOT affected
-        tokenDenylist.entrySet().removeIf(entry -> now.isAfter(entry.getValue()));
+        String jti = generateSecureToken();
+
+        JsonObject claims = new JsonObject()
+            .put("sub", userId)
+            .put("user.id", userId)
+            .put("username", user.getString("username"))
+            .put("created.at", user.getString("created.at"))
+            .put("jti", jti)
+            .put("jit", jti)
+            .put("type", "access");
+
+        JWTOptions jwtOptions = new JWTOptions()
+            .setExpiresInMinutes(config.getAccessTokenTtlMinutes());
+
+        return jwtAuth.generateToken(claims, jwtOptions);
     }
 
-    private String generateSecureSessionId()
+    private String generateSecureToken()
     {
         byte[] bytes = new byte[32];
 
@@ -459,6 +578,6 @@ public class AuthServiceImpl implements AuthService
             }
         }
 
-        return Instant.now().plus(config.getTokenTtlMinutes(), ChronoUnit.MINUTES);
+        return Instant.now().plus(config.getAccessTokenTtlMinutes(), ChronoUnit.MINUTES);
     }
 }

@@ -24,7 +24,9 @@ public class AppConfig
 
     private final String dbPassword;
 
-    private final int tokenTtlMinutes;
+    private final int accessTokenTtlMinutes;
+
+    private final int refreshTokenTtlDays;
 
     private final boolean cookieSecure;
 
@@ -43,7 +45,8 @@ public class AppConfig
         String dbName,
         String dbUser,
         String dbPassword,
-        int tokenTtlMinutes,
+        int accessTokenTtlMinutes,
+        int refreshTokenTtlDays,
         boolean cookieSecure,
         String encryptionKey,
         String engineHost,
@@ -62,7 +65,9 @@ public class AppConfig
 
         this.dbPassword = dbPassword;
 
-        this.tokenTtlMinutes = tokenTtlMinutes;
+        this.accessTokenTtlMinutes = accessTokenTtlMinutes;
+
+        this.refreshTokenTtlDays = refreshTokenTtlDays;
 
         this.cookieSecure = cookieSecure;
 
@@ -75,41 +80,21 @@ public class AppConfig
         this.engineAuthToken = engineAuthToken;
     }
 
-    public static AppConfig load()
+    public AppConfig(
+        int httpPort,
+        String dbHost,
+        int dbPort,
+        String dbName,
+        String dbUser,
+        String dbPassword,
+        int tokenTtlMinutes,
+        boolean cookieSecure,
+        String encryptionKey,
+        String engineHost,
+        int enginePort,
+        String engineAuthToken)
     {
-        Dotenv dotenv = Dotenv.configure()
-            .ignoreIfMissing()
-            .load();
-
-        Map<String, String> dotEnv = loadDotEnv();
-
-        int httpPort = Integer.parseInt(getVal("HTTP_PORT", dotenv.get("HTTP_PORT", "8888"), dotEnv));
-
-        String dbHost = getVal("DB_HOST", dotenv.get("DB_HOST", "localhost"), dotEnv);
-
-        int dbPort = Integer.parseInt(getVal("DB_PORT", dotenv.get("DB_PORT", "5432"), dotEnv));
-
-        String dbName = getVal("DB_NAME", dotenv.get("DB_NAME", "websession_db"), dotEnv);
-
-        String dbUser = getVal("DB_USER", dotenv.get("DB_USER", "websession_app"), dotEnv);
-
-        String dbPassword = getVal("DB_PASSWORD", dotenv.get("DB_PASSWORD", ""), dotEnv);
-
-        String fallbackTtl = getVal("SESSION_TIMEOUT_MINUTES", dotenv.get("SESSION_TIMEOUT_MINUTES", "30"), dotEnv);
-
-        int tokenTtlMinutes = Integer.parseInt(getVal("auth.tokenTtlMinutes", dotenv.get("auth.tokenTtlMinutes", dotenv.get("AUTH_TOKEN_TTL_MINUTES", fallbackTtl)), dotEnv));
-
-        boolean cookieSecure = Boolean.parseBoolean(getVal("COOKIE_SECURE", dotenv.get("COOKIE_SECURE", "false"), dotEnv));
-
-        String encryptionKey = getVal("ENCRYPTION_KEY", dotenv.get("ENCRYPTION_KEY", "websession-default-master-key-32b!"), dotEnv);
-
-        String engineHost = getVal("ENGINE_HOST", dotenv.get("ENGINE_HOST", "127.0.0.1"), dotEnv);
-
-        int enginePort = Integer.parseInt(getVal("ENGINE_PORT", dotenv.get("ENGINE_PORT", "8081"), dotEnv));
-
-        String engineAuthToken = getVal("ENGINE_AUTH_TOKEN", dotenv.get("ENGINE_AUTH_TOKEN", "dev-secret-engine-token-change-in-prod"), dotEnv);
-
-        return new AppConfig(
+        this(
             httpPort,
             dbHost,
             dbPort,
@@ -117,6 +102,7 @@ public class AppConfig
             dbUser,
             dbPassword,
             tokenTtlMinutes,
+            7,
             cookieSecure,
             encryptionKey,
             engineHost,
@@ -125,80 +111,55 @@ public class AppConfig
         );
     }
 
-    private static String getVal(String key, String defaultValue, Map<String, String> dotEnv)
+    public static AppConfig load()
     {
-        String envVal = System.getenv(key);
+        Dotenv dotenv = Dotenv.configure()
+            .ignoreIfMissing()
+            .load();
 
-        if (envVal != null && !envVal.trim().isEmpty())
-        {
-            return envVal.trim();
-        }
+        int httpPort = Integer.parseInt(dotenv.get("HTTP_PORT", "8888"));
 
-        String sysVal = System.getProperty(key);
+        String dbHost = dotenv.get("DB_HOST", "localhost");
 
-        if (sysVal != null && !sysVal.trim().isEmpty())
-        {
-            return sysVal.trim();
-        }
+        int dbPort = Integer.parseInt(dotenv.get("DB_PORT", "5432"));
 
-        String dotEnvVal = dotEnv.get(key);
+        String dbName = dotenv.get("DB_NAME", "websession_db");
 
-        if (dotEnvVal != null && !dotEnvVal.trim().isEmpty())
-        {
-            return dotEnvVal.trim();
-        }
+        String dbUser = dotenv.get("DB_USER", "websession_app");
 
-        return defaultValue;
-    }
+        String dbPassword = dotenv.get("DB_PASSWORD", "");
 
-    private static Map<String, String> loadDotEnv()
-    {
-        Map<String, String> map = new HashMap<>();
+        String fallbackTtl = dotenv.get("ACCESS_TOKEN_TTL_MINUTES", dotenv.get("SESSION_TIMEOUT_MINUTES", "15"));
 
-        File envFile = new File(".env");
+        int accessTokenTtlMinutes = Integer.parseInt(fallbackTtl);
 
-        if (!envFile.exists())
-        {
-            return map;
-        }
+        int refreshTokenTtlDays = Integer.parseInt(dotenv.get("REFRESH_TOKEN_TTL_DAYS", "7"));
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(envFile)))
-        {
-            String line;
+        boolean cookieSecure = Boolean.parseBoolean(dotenv.get("COOKIE_SECURE", "false"));
 
-            while ((line = reader.readLine()) != null)
-            {
-                line = line.trim();
+        String encryptionKey = dotenv.get("ENCRYPTION_KEY", "websession-default-master-key-32b!");
 
-                if (line.isEmpty() || line.startsWith("#"))
-                {
-                    continue;
-                }
+        String engineHost = dotenv.get("ENGINE_HOST", "127.0.0.1");
 
-                int eqIdx = line.indexOf('=');
+        int enginePort = Integer.parseInt(dotenv.get("ENGINE_PORT", "8081"));
 
-                if (eqIdx > 0)
-                {
-                    String key = line.substring(0, eqIdx).trim();
+        String engineAuthToken = dotenv.get("ENGINE_AUTH_TOKEN", "dev-secret-engine-token-change-in-prod");
 
-                    String val = line.substring(eqIdx + 1).trim();
-
-                    if ((val.startsWith("\"") && val.endsWith("\"")) ||
-                        (val.startsWith("'") && val.endsWith("'")))
-                    {
-                        val = val.substring(1, val.length() - 1);
-                    }
-
-                    map.put(key, val);
-                }
-            }
-        }
-        catch (IOException e)
-        {
-            System.err.println("Notice: Could not read .env file: " + e.getMessage());
-        }
-
-        return map;
+        return new AppConfig(
+            httpPort,
+            dbHost,
+            dbPort,
+            dbName,
+            dbUser,
+            dbPassword,
+            accessTokenTtlMinutes,
+            refreshTokenTtlDays,
+            cookieSecure,
+            encryptionKey,
+            engineHost,
+            enginePort,
+            engineAuthToken
+        );
     }
 
     public int getHttpPort()
@@ -231,14 +192,24 @@ public class AppConfig
         return dbPassword;
     }
 
+    public int getAccessTokenTtlMinutes()
+    {
+        return accessTokenTtlMinutes;
+    }
+
+    public int getRefreshTokenTtlDays()
+    {
+        return refreshTokenTtlDays;
+    }
+
     public int getTokenTtlMinutes()
     {
-        return tokenTtlMinutes;
+        return accessTokenTtlMinutes;
     }
 
     public int getSessionTimeoutMinutes()
     {
-        return tokenTtlMinutes;
+        return accessTokenTtlMinutes;
     }
 
     public boolean isCookieSecure()

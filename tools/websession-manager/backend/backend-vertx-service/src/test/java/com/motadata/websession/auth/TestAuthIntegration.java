@@ -108,7 +108,9 @@ public class TestAuthIntegration
             })
             .compose(loginResp ->
             {
+                String accessToken = loginResp.bodyAsJsonObject().getString("accessToken");
                 String token = loginResp.bodyAsJsonObject().getString("token");
+                String refreshToken = loginResp.bodyAsJsonObject().getString("refreshToken");
 
                 testContext.verify(() ->
                 {
@@ -118,22 +120,22 @@ public class TestAuthIntegration
 
                     Assertions.assertEquals(uniqueUser, userObj.getString("username"));
 
-                    // Verify token is in response body
+                    // Verify accessToken and refreshToken are returned
+                    Assertions.assertNotNull(accessToken);
+                    Assertions.assertFalse(accessToken.isEmpty());
                     Assertions.assertNotNull(token);
+                    Assertions.assertNotNull(refreshToken);
+                    Assertions.assertFalse(refreshToken.isEmpty());
 
-                    Assertions.assertFalse(token.isEmpty());
-
-                    // Verify session cookie was also set
+                    // Verify cookies are set
                     String cookieHeader = loginResp.getHeader("Set-Cookie");
-
                     Assertions.assertNotNull(cookieHeader);
-
                     Assertions.assertTrue(cookieHeader.contains(AuthHandler.SESSION_COOKIE_NAME));
                 });
 
                 // Step 4: Call /auth/me with Bearer token header
                 return client.get("/api/v1/auth/me")
-                    .putHeader("Authorization", "Bearer " + token)
+                    .putHeader("Authorization", "Bearer " + accessToken)
                     .send()
                     .compose(meResp ->
                     {
@@ -146,21 +148,51 @@ public class TestAuthIntegration
                             Assertions.assertEquals(uniqueUser, meUser.getString("username"));
                         });
 
-                        // Step 5: Logout using Bearer token
-                        return client.post("/api/v1/auth/logout")
-                            .putHeader("Authorization", "Bearer " + token)
-                            .send()
-                            .compose(logoutResp ->
+                        // Step 5: Refresh token rotation
+                        JsonObject refreshPayload = new JsonObject().put("refreshToken", refreshToken);
+
+                        return client.post("/api/v1/auth/refresh")
+                            .sendJsonObject(refreshPayload)
+                            .compose(refreshResp ->
                             {
                                 testContext.verify(() ->
                                 {
-                                    Assertions.assertEquals(200, logoutResp.statusCode());
+                                    Assertions.assertEquals(200, refreshResp.statusCode());
+                                    JsonObject rBody = refreshResp.bodyAsJsonObject();
+                                    Assertions.assertNotNull(rBody.getString("accessToken"));
+                                    Assertions.assertNotNull(rBody.getString("refreshToken"));
+                                    Assertions.assertNotEquals(refreshToken, rBody.getString("refreshToken"), "Refresh token must rotate");
                                 });
 
-                                // Step 6: Verify /auth/me now returns 401 after logout
-                                return client.get("/api/v1/auth/me")
-                                    .putHeader("Authorization", "Bearer " + token)
-                                    .send();
+                                String newAccessToken = refreshResp.bodyAsJsonObject().getString("accessToken");
+                                String newRefreshToken = refreshResp.bodyAsJsonObject().getString("refreshToken");
+
+                                // Step 6: Attempting to use the OLD rotated refresh token must fail with 401
+                                return client.post("/api/v1/auth/refresh")
+                                    .sendJsonObject(new JsonObject().put("refreshToken", refreshToken))
+                                    .compose(oldRefreshResp ->
+                                    {
+                                        testContext.verify(() ->
+                                        {
+                                            Assertions.assertEquals(401, oldRefreshResp.statusCode());
+                                        });
+
+                                        // Step 7: Logout using new access and refresh token
+                                        return client.post("/api/v1/auth/logout")
+                                            .putHeader("Authorization", "Bearer " + newAccessToken)
+                                            .sendJsonObject(new JsonObject().put("refreshToken", newRefreshToken))
+                                            .compose(logoutResp ->
+                                            {
+                                                testContext.verify(() ->
+                                                {
+                                                    Assertions.assertEquals(200, logoutResp.statusCode());
+                                                });
+
+                                                // Step 8: Verify refresh token is revoked in DB after logout (returns 401)
+                                                return client.post("/api/v1/auth/refresh")
+                                                    .sendJsonObject(new JsonObject().put("refreshToken", newRefreshToken));
+                                            });
+                                    });
                             });
                     });
             })
@@ -197,11 +229,12 @@ public class TestAuthIntegration
             {
                 Assertions.assertEquals(200, loginResp.statusCode());
                 String token = loginResp.bodyAsJsonObject().getString("token");
+                String refreshToken = loginResp.bodyAsJsonObject().getString("refreshToken");
 
                 // 2. Call POST /api/auth/logout?closeAll=true
                 return client.post("/api/auth/logout?closeAll=true")
                     .putHeader("Authorization", "Bearer " + token)
-                    .send()
+                    .sendJsonObject(new JsonObject().put("refreshToken", refreshToken))
                     .compose(logoutResp ->
                     {
                         testContext.verify(() ->
@@ -211,17 +244,16 @@ public class TestAuthIntegration
                             Assertions.assertTrue(msg.contains("closed all ongoing sessions"));
                         });
 
-                        // 3. Verify /api/auth/me now returns 401
-                        return client.get("/api/auth/me")
-                            .putHeader("Authorization", "Bearer " + token)
-                            .send();
+                        // 3. Verify refresh token is revoked after logout (returns 401)
+                        return client.post("/api/auth/refresh")
+                            .sendJsonObject(new JsonObject().put("refreshToken", refreshToken));
                     });
             })
-            .onComplete(testContext.succeeding(meResp ->
+            .onComplete(testContext.succeeding(refreshResp ->
             {
                 testContext.verify(() ->
                 {
-                    Assertions.assertEquals(401, meResp.statusCode());
+                    Assertions.assertEquals(401, refreshResp.statusCode());
                     testContext.completeNow();
                 });
             }));
