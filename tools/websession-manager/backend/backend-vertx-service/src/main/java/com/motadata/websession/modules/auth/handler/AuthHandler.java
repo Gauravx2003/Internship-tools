@@ -1,5 +1,6 @@
 package com.motadata.websession.modules.auth.handler;
 
+import com.motadata.websession.common.error.ErrorCodes;
 import com.motadata.websession.modules.auth.service.AuthService;
 import com.motadata.websession.common.error.ApiException;
 import com.motadata.websession.config.AppConfig;
@@ -33,7 +34,7 @@ public class AuthHandler
 
         if (body == null)
         {
-            ctx.fail(new ApiException(400, "INVALID_REQUEST", "Request body must be a JSON object"));
+            ctx.fail(new ApiException(400, ErrorCodes.INVALID_REQUEST.getCode(), "Request body must be a JSON object"));
 
             return;
         }
@@ -89,7 +90,7 @@ public class AuthHandler
 
         if (refreshToken == null || refreshToken.trim().isEmpty())
         {
-            ctx.fail(new ApiException(400, "INVALID_REQUEST", "Refresh token is required"));
+            ctx.fail(new ApiException(400, ErrorCodes.INVALID_REQUEST.getCode(), "Refresh token is required"));
 
             return;
         }
@@ -210,7 +211,7 @@ public class AuthHandler
 
         if (sessionId == null)
         {
-            ctx.fail(new ApiException(401, "UNAUTHORIZED", "Authentication required"));
+            ctx.fail(new ApiException(401, ErrorCodes.UNAUTHORIZED.getCode(), "Authentication required"));
 
             return;
         }
@@ -235,7 +236,7 @@ public class AuthHandler
 
         if (body == null)
         {
-            ctx.fail(new ApiException(400, "INVALID_REQUEST", "Request body must be a JSON object"));
+            ctx.fail(new ApiException(400, ErrorCodes.INVALID_REQUEST.getCode(), "Request body must be a JSON object"));
 
             return;
         }

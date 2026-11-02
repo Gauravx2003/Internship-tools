@@ -1,5 +1,6 @@
 package com.motadata.websession.middleware;
 
+import com.motadata.websession.common.error.ErrorCodes;
 import com.motadata.websession.modules.auth.handler.AuthHandler;
 import com.motadata.websession.modules.auth.service.AuthService;
 import com.motadata.websession.common.error.ApiException;
@@ -23,7 +24,7 @@ public class SessionAuthMiddleware implements Handler<RoutingContext>
 
         if (sessionId == null)
         {
-            ctx.fail(new ApiException(401, "UNAUTHORIZED", "Authentication required"));
+            ctx.fail(new ApiException(401, ErrorCodes.UNAUTHORIZED.getCode(), "Authentication required"));
 
             return;
         }

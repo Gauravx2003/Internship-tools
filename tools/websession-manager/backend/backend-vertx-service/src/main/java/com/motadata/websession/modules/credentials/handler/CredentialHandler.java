@@ -1,6 +1,7 @@
 package com.motadata.websession.modules.credentials.handler;
 
 import com.motadata.websession.common.error.ApiException;
+import com.motadata.websession.common.error.ErrorCodes;
 import com.motadata.websession.modules.credentials.service.CredentialService;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -44,7 +45,7 @@ public class CredentialHandler
 
         if (body == null)
         {
-            ctx.fail(new ApiException(400, "INVALID_REQUEST", "Request body must be a JSON object"));
+            ctx.fail(new ApiException(400, ErrorCodes.INVALID_REQUEST.getCode(), "Request body must be a JSON object"));
 
             return;
         }

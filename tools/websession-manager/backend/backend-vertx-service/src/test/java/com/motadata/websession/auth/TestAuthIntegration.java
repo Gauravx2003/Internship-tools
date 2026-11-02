@@ -1,5 +1,6 @@
 package com.motadata.websession.auth;
 
+import com.motadata.websession.common.error.ErrorCodes;
 import com.motadata.websession.modules.auth.handler.AuthHandler;
 import com.motadata.websession.backend_vertx_service.MainVerticle;
 import io.vertx.core.Vertx;
@@ -96,7 +97,7 @@ public class TestAuthIntegration
 
                     JsonObject err = wrongResp.bodyAsJsonObject().getJsonObject("error");
 
-                    Assertions.assertEquals("INVALID_CREDENTIALS", err.getString("code"));
+                    Assertions.assertEquals(ErrorCodes.INVALID_CREDENTIALS.getCode(), err.getString("code"));
                 });
 
                 // Step 3: Login with valid credentials

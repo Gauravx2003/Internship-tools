@@ -1,6 +1,7 @@
 package com.motadata.websession.modules.hosts.service;
 
 import com.motadata.websession.common.error.ApiException;
+import com.motadata.websession.common.error.ErrorCodes;
 import com.motadata.websession.common.validator.PayloadValidator;
 import com.motadata.websession.modules.credentials.service.CredentialService;
 import com.motadata.websession.modules.hosts.repository.HostRepository;
@@ -93,7 +94,7 @@ public class HostServiceImpl implements HostService
         if (payload == null)
         {
             return Future.failedFuture(
-                new ApiException(400, "INVALID_REQUEST", "Payload cannot be null")
+                new ApiException(400, ErrorCodes.INVALID_REQUEST.getCode(), "Payload cannot be null")
             );
         }
 

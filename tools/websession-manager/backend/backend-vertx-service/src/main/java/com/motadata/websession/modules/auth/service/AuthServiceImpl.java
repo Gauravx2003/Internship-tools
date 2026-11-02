@@ -1,6 +1,7 @@
 package com.motadata.websession.modules.auth.service;
 
 import com.motadata.websession.common.error.ApiException;
+import com.motadata.websession.common.error.ErrorCodes;
 import com.motadata.websession.config.AppConfig;
 import com.motadata.websession.modules.auth.repository.InMemoryRefreshTokenRepository;
 import com.motadata.websession.modules.auth.repository.RefreshTokenRepository;
@@ -130,7 +131,7 @@ public class AuthServiceImpl implements AuthService
         if (username == null || username.trim().isEmpty() || password == null || password.isEmpty())
         {
             return Future.failedFuture(
-                new ApiException(400, "INVALID_REQUEST", "Username and password are required")
+                new ApiException(400, ErrorCodes.INVALID_REQUEST.getCode(), "Username and password are required")
             );
         }
 
@@ -142,7 +143,7 @@ public class AuthServiceImpl implements AuthService
                 if (userOpt.isEmpty())
                 {
                     return Future.failedFuture(
-                        new ApiException(401, "INVALID_CREDENTIALS", "Invalid username or password")
+                        new ApiException(401, ErrorCodes.INVALID_CREDENTIALS.getCode(), "Invalid username or password")
                     );
                 }
 
@@ -156,7 +157,7 @@ public class AuthServiceImpl implements AuthService
                         if (!matches)
                         {
                             return Future.failedFuture(
-                                new ApiException(401, "INVALID_CREDENTIALS", "Invalid username or password")
+                                new ApiException(401, ErrorCodes.INVALID_CREDENTIALS.getCode(), "Invalid username or password")
                             );
                         }
 
@@ -196,7 +197,7 @@ public class AuthServiceImpl implements AuthService
         if (refreshToken == null || refreshToken.trim().isEmpty())
         {
             return Future.failedFuture(
-                new ApiException(400, "INVALID_REQUEST", "Refresh token is required")
+                new ApiException(400, ErrorCodes.INVALID_REQUEST.getCode(), "Refresh token is required")
             );
         }
 
@@ -208,7 +209,7 @@ public class AuthServiceImpl implements AuthService
                 if (tokenOpt.isEmpty())
                 {
                     return Future.failedFuture(
-                        new ApiException(401, "UNAUTHORIZED", "Invalid or expired refresh token")
+                        new ApiException(401, ErrorCodes.UNAUTHORIZED.getCode(), "Invalid or expired refresh token")
                     );
                 }
 
@@ -227,7 +228,7 @@ public class AuthServiceImpl implements AuthService
                 {
                     return refreshTokenRepository.deleteByToken(cleanToken)
                         .compose(v -> Future.failedFuture(
-                            new ApiException(401, "UNAUTHORIZED", "Refresh token has expired")
+                            new ApiException(401, ErrorCodes.UNAUTHORIZED.getCode(), "Refresh token has expired")
                         ));
                 }
 
@@ -248,7 +249,7 @@ public class AuthServiceImpl implements AuthService
                         if (userOpt.isEmpty())
                         {
                             return Future.failedFuture(
-                                new ApiException(401, "UNAUTHORIZED", "User not found")
+                                new ApiException(401, ErrorCodes.UNAUTHORIZED.getCode(), "User not found")
                             );
                         }
 
@@ -382,7 +383,7 @@ public class AuthServiceImpl implements AuthService
         if (sessionId == null || sessionId.trim().isEmpty())
         {
             return Future.failedFuture(
-                new ApiException(401, "UNAUTHORIZED", "Authentication required")
+                new ApiException(401, ErrorCodes.UNAUTHORIZED.getCode(), "Authentication required")
             );
         }
 
@@ -390,7 +391,7 @@ public class AuthServiceImpl implements AuthService
 
         return jwtAuth.authenticate(new TokenCredentials(cleanToken))
             .recover(err -> Future.failedFuture(
-                new ApiException(401, "UNAUTHORIZED", "Session expired or invalid")
+                new ApiException(401, ErrorCodes.UNAUTHORIZED.getCode(), "Session expired or invalid")
             ))
             .compose(user ->
             {
@@ -401,7 +402,7 @@ public class AuthServiceImpl implements AuthService
                 if ("refresh".equalsIgnoreCase(type))
                 {
                     return Future.failedFuture(
-                        new ApiException(401, "UNAUTHORIZED", "Invalid token type")
+                        new ApiException(401, ErrorCodes.UNAUTHORIZED.getCode(), "Invalid token type")
                     );
                 }
 
@@ -427,7 +428,7 @@ public class AuthServiceImpl implements AuthService
         if (username == null || username.trim().isEmpty() || password == null || password.length() < 8)
         {
             return Future.failedFuture(
-                new ApiException(400, "INVALID_REQUEST", "Username is required and password must be at least 8 characters")
+                new ApiException(400, ErrorCodes.INVALID_REQUEST.getCode(), "Username is required and password must be at least 8 characters")
             );
         }
 

@@ -1,6 +1,7 @@
 package com.motadata.websession.common.validator;
 
 import com.motadata.websession.common.error.ApiException;
+import com.motadata.websession.common.error.ErrorCodes;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 
@@ -57,12 +58,12 @@ public class PayloadValidator {
 
   public Future<Void> validate() {
     if (payload == null) {
-      return Future.failedFuture(new ApiException(400, "INVALID_REQUEST", "Payload cannot be null"));
+      return Future.failedFuture(new ApiException(400, ErrorCodes.INVALID_REQUEST.getCode(), "Payload cannot be null"));
     }
 
     for (Rule rule : rules) {
       if (rule.condition().test(payload)) {
-        return Future.failedFuture(new ApiException(400, "INVALID_REQUEST", rule.message()));
+        return Future.failedFuture(new ApiException(400, ErrorCodes.INVALID_REQUEST.getCode(), rule.message()));
       }
     }
     return Future.succeededFuture();
