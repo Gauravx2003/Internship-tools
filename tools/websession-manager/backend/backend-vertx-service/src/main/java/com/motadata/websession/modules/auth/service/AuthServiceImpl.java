@@ -75,7 +75,26 @@ public class AuthServiceImpl implements AuthService
         this.jwtAuth = JWTAuth.create(vertx, jwtAuthOptions);
 
         // Periodically purge expired refresh tokens from repository
-        this.vertx.setPeriodic(60 * 60 * 1000L, id -> this.refreshTokenRepository.deleteExpired());
+        this.vertx.setPeriodic(60 * 60 * 1000L, id ->
+        {
+
+          this.refreshTokenRepository.deleteExpired()
+
+            .onSuccess(count->
+            {
+              if (count>0)
+              {
+
+                System.out.println("Purged "+count+" tokens");
+
+              }
+            })
+            .onFailure(err->
+            {
+              System.out.println(err.getMessage());
+
+            });
+        });
     }
 
     public AuthServiceImpl(
@@ -176,10 +195,10 @@ public class AuthServiceImpl implements AuthService
 
                         JsonObject rtRecord = new JsonObject()
                             .put("id", UUID.randomUUID().toString())
-                            .put("userId", userId)
+                            .put("user.id", userId)
                             .put("token", refreshToken)
-                            .put("expiresAt", refreshExpiresAt.toString())
-                            .put("createdAt", Instant.now().toString());
+                            .put("expires.at", refreshExpiresAt.toString())
+                            .put("created.at", Instant.now().toString());
 
                         return refreshTokenRepository.create(rtRecord)
                             .map(saved -> new JsonObject()
@@ -215,12 +234,12 @@ public class AuthServiceImpl implements AuthService
 
                 JsonObject record = tokenOpt.get();
 
-                String expiresAtStr = record.getString("expiresAt");
-
-                if (expiresAtStr == null)
-                {
-                    expiresAtStr = record.getString("expires_at");
-                }
+                String expiresAtStr = record.getString("expires.at");
+//
+//                if (expiresAtStr == null)
+//                {
+//                    expiresAtStr = record.getString("expires_at");
+//                }
 
                 Instant expiresAt = Instant.parse(expiresAtStr);
 
@@ -232,12 +251,12 @@ public class AuthServiceImpl implements AuthService
                         ));
                 }
 
-                String userId = record.getString("userId");
+                String userId = record.getString("user.id");
 
-                if (userId == null)
-                {
-                    userId = record.getString("user_id");
-                }
+//                if (userId == null)
+//                {
+//                    userId = record.getString("user_id");
+//                }
 
                 final String finalUserId = userId;
 
@@ -268,10 +287,10 @@ public class AuthServiceImpl implements AuthService
 
                         JsonObject newRecord = new JsonObject()
                             .put("id", UUID.randomUUID().toString())
-                            .put("userId", user.getString("id"))
+                            .put("user.id", user.getString("id"))
                             .put("token", newRefreshToken)
-                            .put("expiresAt", newExpiresAt.toString())
-                            .put("createdAt", Instant.now().toString());
+                            .put("expires.at", newExpiresAt.toString())
+                            .put("created.at", Instant.now().toString());
 
                         return refreshTokenRepository.create(newRecord)
                             .map(saved -> new JsonObject()
@@ -359,7 +378,7 @@ public class AuthServiceImpl implements AuthService
                     {
                         JsonObject rec = opt.get();
 
-                        String uid = rec.getString("userId", rec.getString("user_id"));
+                        String uid = rec.getString("user.id", rec.getString("user_id"));
 
                         return refreshTokenRepository.deleteByUserId(uid)
                             .compose(v -> terminalSessionRegistry.closeAllSessionsForUser(uid, "explicit_logout_close_all"))
@@ -554,12 +573,14 @@ public class AuthServiceImpl implements AuthService
         {
             String sub = payload.getString("sub");
 
+          //System.out.println(sub);
+
             if (sub != null)
             {
                 return sub;
             }
 
-            return payload.getString("userId");
+            return payload.getString("user.id");
         }
 
         return null;

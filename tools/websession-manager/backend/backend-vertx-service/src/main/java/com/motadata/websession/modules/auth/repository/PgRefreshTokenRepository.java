@@ -49,7 +49,7 @@ public class PgRefreshTokenRepository implements RefreshTokenRepository
             ? Instant.parse(expiresAtStr).atOffset(ZoneOffset.UTC)
             : OffsetDateTime.now(ZoneOffset.UTC).plusDays(7);
 
-        String userId = tokenRecord.getString("userId");
+        String userId = tokenRecord.getString("user.id");
         if (userId == null)
         {
             userId = tokenRecord.getString("user_id");
@@ -130,11 +130,9 @@ public class PgRefreshTokenRepository implements RefreshTokenRepository
 
         return new JsonObject()
             .put("id", row.getString("id"))
-            .put("userId", row.getString("user_id"))
-            .put("user_id", row.getString("user_id"))
+            .put("user.id", row.getString("user_id"))
             .put("token", row.getString("token"))
-            .put("expiresAt", expiresAt != null ? expiresAt.toInstant().toString() : null)
-            .put("expires_at", expiresAt != null ? expiresAt.toInstant().toString() : null)
+            .put("expires.at", expiresAt != null ? expiresAt.toInstant().toString() : null)
             .put("createdAt", createdAt != null ? createdAt.toInstant().toString() : null)
             .put("created.at", createdAt != null ? createdAt.toInstant().toString() : null);
     }

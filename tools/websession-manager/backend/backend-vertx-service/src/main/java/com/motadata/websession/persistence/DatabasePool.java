@@ -26,7 +26,9 @@ public class DatabasePool
 
         PoolOptions poolOptions = new PoolOptions()
 
-            .setMaxSize(10);
+            .setMaxSize(10)
+
+            .setConnectionTimeout(5000);
 
         return PgBuilder.pool()
 
