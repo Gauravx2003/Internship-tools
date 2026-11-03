@@ -1,4 +1,4 @@
-# Web Session Manager — Modules and API Architecture*Author: Gaurav Daware · October 2026 · Draft v3, fixed-expiry login, per-user engine link · Companion to the PRD*
+# Web Session Manager — Modules and API Architecture*Author: Gaurav Daware · October 2026 · Draft v2, ticket service removed · Companion to the PRD*
 
 ## 1. Purpose
 
@@ -49,7 +49,7 @@ REMOTE SERVER
 | Module | Responsibility |
 | --- | --- |
 | **api-client** | One typed wrapper over `fetch`: base URL, cookie credentials, CSRF header, error normalization, 401 handling (redirect to login). Types generated from the OpenAPI spec. |
-| **auth** | Login page, logout (with an option to close all open terminals), session-expiry handling, route guards (Vue Router). |
+| **auth** | Login page, logout, session-expiry handling, route guards (Vue Router). |
 | **host-manager** | List, create, edit, duplicate, delete saved sessions; folders/tags, color, favorite toggle; search and pagination. |
 | **credential-manager** | Create/edit/delete credentials (password or private key upload); write-only secret fields; shows "used by N hosts". |
 | **key-manager** | Generate key pair, show public key and fingerprint, one-time private key download, deploy-key wizard. |
@@ -69,13 +69,13 @@ Organized in layers: **handler** (HTTP/WS, validation, no business logic) → **
 | Module | What it does | Type |
 | --- | --- | --- |
 | **middleware** | Every request passes through this first. It tags the request, checks it comes from our own site, confirms the user is logged in, limits repeated requests, and turns any error into a clear, consistent message. | Core |
-| **auth** | Handles login and logout. Each login lasts a fixed time (30 minutes by default) and is never extended by activity. Logout ends only the login, or, with the close-all option, also closes the user's open terminals. It is built so a company login (SSO) can replace it later. | Core |
+| **auth** | Handles login and logout. It keeps the user signed in while they are active and signs them out after a period of inactivity. It is built so a company login (SSO) can replace it later. | Core |
 | **hosts** | Saves and manages the servers a user connects to: add, edit, delete and search. It also keeps each server's startup script and the trusted fingerprint of the server. Favourites, tags and last used are extended features. | Core, with extended parts |
 | **credentials (vault)** | Saves usernames, passwords and private keys. It checks that an uploaded key is valid, encrypts secrets with standard encryption before saving, and never sends a saved password or key back to the browser. Only the service itself can read them when a connection starts. | Core |
 | **keys** | Creates a new public and private key pair. The private key is saved in the vault and the user gets the public key. Useful when the user wants to log in with a key instead of a password. | Core |
-| **terminal-gateway** | The link between the browser terminal and the engine. When the browser opens a terminal connection, it checks the user is logged in and the request comes from our own site. Then it passes what the user types to the engine and what the server prints back to the browser. It also limits how many sessions one user can open and closes sessions left unused for too long. It keeps an in-memory list of each user's open terminals, which the session limit, "logout and close all" and shutdown clean-up all use. | Core |
+| **terminal-gateway** | The link between the browser terminal and the engine. When the browser opens a terminal connection, it checks the user is logged in and the request comes from our own site. Then it passes what the user types to the engine and what the server prints back to the browser. It also limits how many sessions one user can open and closes sessions left unused for too long. | Core |
 | **engine-manager** | Starts the Go engine when someone needs it and stops it after it has been idle for a while. If the engine crashes, it starts it again on the next request. It also counts how many sessions are running. | Core |
-| **engine-channel** | The road between the Vert.x service and the Go engine. For now it uses WebSockets: one connection per user, shared by all of that user's terminals, with every message tagged by its session. Later we will test message queues and keep whichever works better. | Core |
+| **engine-channel** | The road between the Vert.x service and the Go engine. For now it uses WebSockets. Later we will test message queues and keep whichever works better. | Core |
 | **history** | Keeps a record of every connection: which server, when it started, when it ended and how it ended. Also feeds the recent and most used lists. | Extended |
 | **logs** | Keeps the saved text logs of sessions. Users can see the list, download a log or delete it. Old logs are removed automatically and log files stay private to their owner. | Extended |
 | **export-import** | Backs up saved servers into a protected file and restores them later or on another system. It checks the file before importing, and imported items are always added as new, so nothing existing is overwritten. | Extended |
@@ -87,7 +87,7 @@ Shared plumbing such as database access and settings is not a separate module. I
 | Module | What it does | Type |
 | --- | --- | --- |
 | **control-server** | The engine's front door. It accepts connections only from Vert.x and only when Vert.x shows the secret token. It also answers "are you alive?", "how many sessions are running?" and "please shut down". | Core |
-| **session-manager** | The engine's list of open sessions. It starts a new session, closes finished ones, counts how many are running, enforces a maximum, closes everything neatly when the engine is told to stop, and closes all sessions of a Vert.x connection as soon as that connection drops. | Core |
+| **session-manager** | The engine's list of open sessions. It starts a new session, closes finished ones, counts how many are running, enforces a maximum, and closes everything neatly when the engine is told to stop. | Core |
 | **ssh-client** | Does the actual SSH work. It connects to the remote server (directly for now, through an agent later), logs in with a password, a key, or a key with a passphrase, opens a terminal on the remote side, and keeps the connection alive. | Core |
 | **pty-pump** | Moves data between Vert.x and the remote server. It carries what the user types to the server and what the server prints back, slows down if the other side cannot keep up, and passes on window resizes so full-screen apps redraw properly. | Core |
 | **hostkey-verifier** | Checks that the server is really the one you think it is. If the server's fingerprint is already known, it compares and blocks the connection on a mismatch. For a first-time server it pauses and asks the user to trust it or not. Kept as a separate module in case Go's SSH library does not handle this the way we need. | Alternative |
@@ -99,7 +99,7 @@ Shared plumbing such as database access and settings is not a separate module. I
 ### 4.1 Vert.x ↔ Engine (MVP: WebSocket)
 
 - **Control endpoints (HTTP):** `/health`, `/status`, `/shutdown`. Used by the Engine Manager only.
-- **Session endpoint:** `WS /session`. One WebSocket per user, shared by all of that user's terminals and one-shot operations (deploy key, test). Messages are told apart by sessionId, and the engine knows the connection only by an opaque ID, never the user's identity.
+- **Session endpoint:** `WS /session`. One WebSocket per SSH session (terminal) or per one-shot operation (deploy key, test).
 - **Envelope (all messages, both directions):**
 
 ```
@@ -112,7 +112,7 @@ Shared plumbing such as database access and settings is not a separate module. I
 | Vert.x → Engine | `open` | host, port, username, authType, secret (password or key + passphrase), expectedFingerprint (nullable), term, cols, rows, logging {enabled, stripControl, path} |
 | Vert.x → Engine | `input` | bytes (base64) |
 | Vert.x → Engine | `resize` | cols, rows |
-| Vert.x → Engine | `ack` | bytes consumed for this session (flow-control credit) |
+| Vert.x → Engine | `ack` | bytes consumed (flow control) |
 | Vert.x → Engine | `hostkey_decision` | accept / reject |
 | Vert.x → Engine | `close` | reason |
 | Vert.x → Engine | `deploy_key` | host, port, username, password, publicKey |
@@ -124,12 +124,6 @@ Shared plumbing such as database access and settings is not a separate module. I
 | Engine → Vert.x | `result` | outcome of a one-shot operation |
 
 **Error codes (engine):** `DNS_FAILED`, `CONNECT_TIMEOUT`, `CONNECTION_REFUSED`, `AUTH_FAILED`, `HOSTKEY_MISMATCH`, `HOSTKEY_REJECTED`, `PTY_FAILED`, `SESSION_LIMIT`, `INTERNAL`.
-
-**One connection per user: rules**
-
-- **Flow control per session:** each `ack` gives credit for one sessionId. When a session runs out of credit, the engine stops reading that SSH session only; other sessions on the same connection keep flowing.
-- **Connection drops:** if a Vert.x connection closes or its ping/pong heartbeat stops, the engine closes every session opened through it, so no SSH connection is left running.
-- **Isolation:** each browser terminal WebSocket maps to exactly one sessionId inside Vert.x, so a user cannot send input to another user's session.
 
 ### 4.2 Making queues possible later
 
@@ -176,7 +170,7 @@ STOPPED --request--> STARTING --ready--> RUNNING <--new request-- IDLE
 | Method | Path | Purpose |
 | --- | --- | --- |
 | POST | `/auth/login` | Username + password → sets session cookie, returns user |
-| POST | `/auth/logout` | Ends the login; open terminals keep running. With ?closeAll=true it also closes every open terminal of the user. |
+| POST | `/auth/logout` | Ends session |
 | GET | `/auth/me` | Current user and CSRF token |
 
 **Hosts (saved sessions)**
@@ -271,16 +265,14 @@ The MVP uses one login cookie and no separate tokens. A terminal opens only if t
 | Topic | Rule |
 | --- | --- |
 | Login cookie | Set at login. Scripts cannot read it (HttpOnly), it travels only over HTTPS (Secure), and the browser sends it only on requests that start from our own site (SameSite=Strict). |
-| Where the login lives | In memory on the Vert.x service (no auth\_sessions table), so logout takes effect immediately. A new random token ID is created at every login. |
-| Login expiry | Fixed at 30 minutes after login (configurable). It is never extended: using the app or typing in a terminal does not count as activity for it. |
+| Where the login lives | In a session store on the server, so logout takes effect immediately. A new session ID is created at every login. |
+| Login expiry | After 30 minutes without activity, and never later than 8 hours after login (both configurable). Using the app or typing in a terminal counts as activity, recorded at most once a minute. |
 | After the cookie expires | New terminals and new API calls need a fresh login. Terminals already open keep running until their own idle timeout. |
 | Terminal idle timeout | A terminal closes by itself after a period with no typing and no output (default 30 minutes), with a warning 1 to 2 minutes before. It closes only that terminal. |
 | Maximum terminal lifetime | 12 hours, so no terminal runs forever. |
-| Logout | Ends the login only. Open terminals keep running until their own idle timeout or maximum lifetime. |
-| Logout and close all | Ends the login and closes every open terminal of that user. Any other login of the same user issued before this moment also stops working (tokens\_valid\_after). |
-| Remote server connection | Does not depend on the login cookie. It uses the saved credential, and we close it ourselves on "logout and close all", idle timeout or maximum lifetime. |
-| Open-terminal list | Vert.x keeps an in-memory list of each user's open terminals, keyed by user, not by login. Every way a terminal ends (idle timeout, user closes it, error, forced close) goes through one close routine that also removes it from the list. |
-| Server restart | All logins and open terminals end, because both live in the service's memory, and users log in again. The engine closes every session of a dropped Vert.x connection. A normal shutdown closes all terminals and writes their end records first; on startup, history rows still open are marked interrupted. |
+| Logout | Ends the login and closes every open terminal of that user. |
+| Last terminal closes | When no terminal is open and the user has done nothing in the app for the inactivity period, the login ends too. |
+| Remote server connection | Does not depend on the login cookie. It uses the saved credential, and we close it ourselves on logout or idle timeout. |
 | Tokens | No JWT, refresh token or ticket in the MVP. A one-time ticket can be added later as an extra safety layer. |
 
 ## 6. Key Flows
@@ -293,7 +285,7 @@ The MVP uses one login cookie and no separate tokens. A terminal opens only if t
 4. The browser sends its first message: `connect` with the host ID and terminal size.
 5. terminal-gateway checks that the host belongs to the user, the address is allowed, and the user is under the session limit.
 6. engine-manager makes sure the engine is running and starts it if it is stopped. The browser sees an "engine starting" state.
-7. The vault hands the saved credential to terminal-gateway (in memory only). engine-channel uses the user's existing link to the engine (or opens one for their first terminal) and sends the connect request, with the saved fingerprint if there is one.
+7. The vault hands the saved credential to terminal-gateway (in memory only). engine-channel opens a link to the engine and sends the connect request, with the saved fingerprint if there is one.
 8. In the engine, ssh-client connects to the server and hostkey-verifier checks its fingerprint. For a first-time server, the browser shows the fingerprint, the user trusts it, and hosts saves it.
 9. ssh-client logs in and opens a terminal. pty-pump carries typing and output in both directions.
 10. history records the start. If logging is on, session-logger writes the text log. On close, history records the end and the engine drops the credential from memory.
@@ -315,7 +307,7 @@ The MVP uses one login cookie and no separate tokens. A terminal opens only if t
 
 | Module | Tables owned |
 | --- | --- |
-| auth | users (including tokens\_valid\_after) |
+| auth | users, auth\_sessions |
 | hosts | hosts (including `agent_id` nullable for later) |
 | credentials | credentials |
 | known-hosts | known\_hosts |
@@ -368,15 +360,13 @@ web-session-manager/
 | 7 | hostkey-verifier and the fingerprint prompt, with hosts saving the fingerprint | First connect asks to trust, and a changed key blocks the connection |
 | 8 | keys and key-deployer | A user can generate a key, deploy it with a password once, and then log in with the key |
 | 9 | Extended modules: history, logs and session-logger, favourites, tags and last used, export-import | Past connections are listed, logs can be downloaded, and a backup can be restored |
-| 10 | Session rules (fixed login expiry, logout and close all, restart clean-up, idle timeouts, warnings), limits, Windows packaging, load test | 50 sessions run stably for an hour and the lifetime rules in 5.4 are verified |
+| 10 | Session rules (logout closes terminals, idle timeouts, warnings), limits, Windows packaging, load test | 50 sessions run stably for an hour and the lifetime rules in 5.4 are verified |
 
 ## 11. Assumptions and Open Points for the Mentor
 
 1. One engine process per Vert.x instance, started as a child process of the service.
 2. Vert.x and the engine run on the same machine in the MVP.
-3. Login uses a random token held in server memory, with a fixed expiry and no refresh. To confirm with the mentor: is JWT required?
+3. Login uses a server-side session cookie. To confirm with the mentor: is JWT required?
 4. Log files stay on the Vert.x host's disk. To confirm: path, size limits and retention.
 5. To confirm: which queue technology the host product already runs, for the later engine-channel option.
 6. A one-time ticket can be added later as extra protection for the terminal connection if it is needed.
-7. Restart policy: all logins and open terminals end when Vert.x restarts, because they live only in memory. To confirm this is acceptable.
-8. After a fresh login the UI has no list of terminals opened under an expired login. Proposed: a GET endpoint listing the user's open terminals, so they can be seen and closed.
