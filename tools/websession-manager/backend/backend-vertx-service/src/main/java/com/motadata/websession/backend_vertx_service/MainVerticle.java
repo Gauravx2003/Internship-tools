@@ -95,6 +95,6 @@ public class MainVerticle extends VerticleBase {
     HostRouter hostRouter = new HostRouter(hostHandler, sessionAuthMiddleware);
     KeyRouter keyRouter = new KeyRouter(keyHandler, sessionAuthMiddleware);
 
-    return AppRouter.create(vertx, authRouter, hostRouter, credentialRouter, keyRouter, engineChannel);
+    return AppRouter.create(vertx, authRouter, hostRouter, credentialRouter, keyRouter);
   }
 }
