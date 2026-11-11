@@ -9,14 +9,17 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/gaurav/web-session/session-engine/internal/session"
 )
 
 // Server represents the control HTTP server of the Go Session Engine.
 // It serves as the front door for Vert.x Engine Manager to perform health checks,
-// query active session count, and trigger graceful engine shutdown.
+// query active session count, handle live session WebSockets, and trigger graceful engine shutdown.
 type Server struct {
 	cfg          Config
 	tracker      SessionTracker
+	sessionMgr   *session.Manager
 	startedAt    time.Time
 	shutdownOnce sync.Once
 	shutdownReq  chan struct{}
@@ -34,9 +37,17 @@ func NewServer(cfg Config, tracker SessionTracker) *Server {
 		tracker = NoopSessionTracker{}
 	}
 
+	var sessionMgr *session.Manager
+	if sm, ok := tracker.(*session.Manager); ok {
+		sessionMgr = sm
+	} else {
+		sessionMgr = session.NewManager(cfg.MaxSessions)
+	}
+
 	s := &Server{
 		cfg:         cfg,
 		tracker:     tracker,
+		sessionMgr:  sessionMgr,
 		startedAt:   time.Now().UTC(),
 		shutdownReq: make(chan struct{}),
 		readyCh:     make(chan struct{}),
@@ -46,6 +57,7 @@ func NewServer(cfg Config, tracker SessionTracker) *Server {
 	mux.HandleFunc("GET /health", s.health)
 	mux.HandleFunc("GET /status", s.status)
 	mux.HandleFunc("POST /shutdown", s.shutdown)
+	mux.HandleFunc("/session", s.session)
 
 	s.handler = requireToken(cfg.Token, mux)
 

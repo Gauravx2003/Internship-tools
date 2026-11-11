@@ -72,7 +72,7 @@ public class MainVerticle extends VerticleBase {
     HostRepository hostRepository = new PgHostRepository(dbPool);
 
     // Registries
-    TerminalSessionRegistry terminalSessionRegistry = new InMemoryTerminalSessionRegistry(vertx, config);
+    TerminalSessionRegistry terminalSessionRegistry = new TerminalSessionRegistry(vertx, config);
 
     // Services (Short-lived access token + DB-backed refresh token with rotation)
     AuthService authService = new AuthServiceImpl(vertx, userRepository, refreshTokenRepository, terminalSessionRegistry, config);
