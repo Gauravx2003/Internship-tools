@@ -1,0 +1,107 @@
+{
+  "io_throughput": {
+    "single": {
+      "mode": "single",
+      "num_sessions": 20,
+      "total_messages": 1000,
+      "total_kb_transferred": 1000.0,
+      "duration_sec": 5.13,
+      "throughput_kb_sec": 194.93,
+      "throughput_msgs_sec": 194.93,
+      "latency_p50_ms": 5.12,
+      "latency_p95_ms": 5.17,
+      "latency_p99_ms": 5.2,
+      "latency_max_ms": 10.29
+    },
+    "per_session": {
+      "mode": "per_session",
+      "num_sessions": 20,
+      "total_messages": 1000,
+      "total_kb_transferred": 1000.0,
+      "duration_sec": 5.128,
+      "throughput_kb_sec": 195.02,
+      "throughput_msgs_sec": 195.02,
+      "latency_p50_ms": 5.12,
+      "latency_p95_ms": 5.17,
+      "latency_p99_ms": 5.21,
+      "latency_max_ms": 6.41
+    },
+    "bounded": {
+      "mode": "bounded",
+      "num_sessions": 20,
+      "total_messages": 1000,
+      "total_kb_transferred": 1000.0,
+      "duration_sec": 5.125,
+      "throughput_kb_sec": 195.11,
+      "throughput_msgs_sec": 195.11,
+      "latency_p50_ms": 5.12,
+      "latency_p95_ms": 5.18,
+      "latency_p99_ms": 5.21,
+      "latency_max_ms": 7.06
+    }
+  },
+  "crash_impact": {
+    "single": {
+      "mode": "single",
+      "total_active_sessions_before_crash": 20,
+      "sessions_killed_count": 20,
+      "sessions_killed_percentage": 100.0,
+      "surviving_sessions_count": 0,
+      "recovery_time_new_session_ms": 5.56
+    },
+    "per_session": {
+      "mode": "per_session",
+      "total_active_sessions_before_crash": 20,
+      "sessions_killed_count": 1,
+      "sessions_killed_percentage": 5.0,
+      "surviving_sessions_count": 19,
+      "recovery_time_new_session_ms": 5.92
+    },
+    "bounded": {
+      "mode": "bounded",
+      "total_active_sessions_before_crash": 20,
+      "sessions_killed_count": 5,
+      "sessions_killed_percentage": 25.0,
+      "surviving_sessions_count": 15,
+      "recovery_time_new_session_ms": 5.65
+    }
+  },
+  "churn_leaks": {
+    "single": {
+      "mode": "single",
+      "cycles": 50,
+      "duration_sec": 0.77,
+      "cycles_per_sec": 64.88,
+      "baseline_rss_mb": 9.95,
+      "post_churn_rss_mb": 13.92,
+      "rss_delta_mb": 3.97,
+      "baseline_fds": 5,
+      "post_churn_fds": 5,
+      "fd_delta": 0
+    },
+    "per_session": {
+      "mode": "per_session",
+      "cycles": 50,
+      "duration_sec": 0.82,
+      "cycles_per_sec": 60.86,
+      "baseline_rss_mb": 10.13,
+      "post_churn_rss_mb": 513.98,
+      "rss_delta_mb": 503.85,
+      "baseline_fds": 5,
+      "post_churn_fds": 255,
+      "fd_delta": 250
+    },
+    "bounded": {
+      "mode": "bounded",
+      "cycles": 50,
+      "duration_sec": 0.77,
+      "cycles_per_sec": 64.99,
+      "baseline_rss_mb": 10.09,
+      "post_churn_rss_mb": 14.06,
+      "rss_delta_mb": 3.97,
+      "baseline_fds": 5,
+      "post_churn_fds": 5,
+      "fd_delta": 0
+    }
+  }
+}

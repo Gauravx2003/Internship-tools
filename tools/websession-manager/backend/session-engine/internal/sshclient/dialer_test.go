@@ -61,19 +61,3 @@ func TestDirectDialer_ContextCancelled(t *testing.T) {
 		t.Fatalf("expected error dialing with canceled context, got nil")
 	}
 }
-
-func TestDialSSH_Helper(t *testing.T) {
-	cfg, err := DialSSH("testuser", "testpass")
-	if err != nil {
-		t.Fatalf("DialSSH returned unexpected error: %v", err)
-	}
-	if cfg.User != "testuser" {
-		t.Errorf("expected User to be testuser, got %s", cfg.User)
-	}
-	if len(cfg.Auth) != 1 {
-		t.Errorf("expected 1 auth method, got %d", len(cfg.Auth))
-	}
-	if cfg.Timeout != 5*time.Second {
-		t.Errorf("expected timeout 5s, got %v", cfg.Timeout)
-	}
-}

@@ -29,6 +29,7 @@ type mockTerminal struct {
 	lastRows     atomic.Uint32
 	resizeCount  atomic.Int32
 	waitErr      error
+	waitCh       chan struct{}
 	closeOnce    sync.Once
 	closed       atomic.Bool
 }
@@ -42,6 +43,7 @@ func newMockTerminal(waitErr error) *mockTerminal {
 		stdoutReader: stdoutR,
 		stdoutWriter: stdoutW,
 		waitErr:      waitErr,
+		waitCh:       make(chan struct{}),
 	}
 }
 
@@ -67,6 +69,11 @@ func (m *mockTerminal) Wait() error {
 func (m *mockTerminal) Close() error {
 	m.closeOnce.Do(func() {
 		m.closed.Store(true)
+		select {
+		case <-m.waitCh:
+		default:
+			close(m.waitCh)
+		}
 		_ = m.stdinWriter.Close()
 		_ = m.stdoutWriter.Close()
 		_ = m.stdinReader.Close()
@@ -471,12 +478,13 @@ func TestPump_WithRealSSHClientAndTerminal(t *testing.T) {
 	// 2. Connect via sshclient.Dial
 	port := ln.Addr().(*net.TCPAddr).Port
 	cfg := sshclient.Config{
-		Host:           "127.0.0.1",
-		Port:           port,
-		Username:       "alice",
-		AuthType:       sshclient.AuthTypePassword,
-		Password:       "secret",
-		ConnectTimeout: 2 * time.Second,
+		Host:                      "127.0.0.1",
+		Port:                      port,
+		Username:                  "alice",
+		AuthType:                  sshclient.AuthTypePassword,
+		Password:                  "secret",
+		ConnectTimeout:            2 * time.Second,
+		InsecureSkipHostKeyVerify: true,
 	}
 
 	client, err := sshclient.Dial(context.Background(), &cfg, nil)

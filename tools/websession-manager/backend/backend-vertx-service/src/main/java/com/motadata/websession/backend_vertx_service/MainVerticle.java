@@ -11,7 +11,7 @@ import com.motadata.websession.modules.credentials.handler.*;
 import com.motadata.websession.modules.credentials.repository.*;
 import com.motadata.websession.modules.credentials.service.*;
 import com.motadata.websession.modules.engine.channel.EngineChannel;
-import com.motadata.websession.modules.engine.channel.WebSocketEngineChannel;
+import com.motadata.websession.modules.engine.channel.StdioPipeEngineChannel;
 import com.motadata.websession.modules.hosts.handler.*;
 import com.motadata.websession.modules.hosts.repository.*;
 import com.motadata.websession.modules.hosts.service.*;
@@ -34,7 +34,9 @@ public class MainVerticle extends VerticleBase {
   public Future<?> start() {
     AppConfig config = AppConfig.load();
     this.dbPool = DatabasePool.create(vertx, config);
-    this.engineChannel = new WebSocketEngineChannel(vertx, config);
+
+    // Bounded session architecture: multiplexed standard I/O pipes to Go Session Engine processes
+    this.engineChannel = new StdioPipeEngineChannel(vertx, config);
 
     Router appRouter = createAppRouter(config);
 
@@ -49,6 +51,7 @@ public class MainVerticle extends VerticleBase {
         System.out.println(" 🌐 Port:               " + port);
         System.out.println(" 🏥 Health Check:       http://localhost:" + port + "/health");
         System.out.println(" 🔌 Engine Test WS:     ws://localhost:" + port + "/ws/test-engine");
+        System.out.println(" ⚡ Engine Transport:   stdio (max " + config.getEngineMaxSessionsPerProcess() + " sessions/process)");
         System.out.println("===================================================");
       })
       .onFailure(err -> System.err.println("Failed to start HTTP server: " + err.getMessage()));

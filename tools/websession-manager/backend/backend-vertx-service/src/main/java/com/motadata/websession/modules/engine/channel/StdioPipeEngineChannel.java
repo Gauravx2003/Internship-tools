@@ -2,42 +2,47 @@ package com.motadata.websession.modules.engine.channel;
 
 import com.motadata.websession.config.AppConfig;
 import com.motadata.websession.modules.engine.model.EngineEnvelope;
+import com.motadata.websession.modules.engine.stdio.GoProcessInstance;
+import com.motadata.websession.modules.engine.stdio.StdioProcessPool;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
-import io.vertx.core.http.WebSocket;
-import io.vertx.core.http.WebSocketClient;
-import io.vertx.core.http.WebSocketConnectOptions;
 import io.vertx.core.json.JsonObject;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * WebSocket implementation of EngineChannel connecting Vert.x to the Go Session Engine.
+ * Standard I/O Pipe implementation of EngineChannel connecting Vert.x to Go Session Engine processes.
+ * Multiplexes up to N sessions per process (default N=5) and routes dynamically.
  */
-public class WebSocketEngineChannel implements EngineChannel
+public class StdioPipeEngineChannel implements EngineChannel
 {
 
     private final Vertx vertx;
 
     private final AppConfig config;
 
-    private final WebSocketClient webSocketClient;
+    private final StdioProcessPool processPool;
 
     private final Map<String, EngineSessionChannel> activeChannels = new ConcurrentHashMap<>();
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
-    public WebSocketEngineChannel(Vertx vertx, AppConfig config)
+    public StdioPipeEngineChannel(Vertx vertx, AppConfig config)
     {
         this.vertx = vertx;
         this.config = config;
-        this.webSocketClient = vertx.createWebSocketClient();
+        this.processPool = new StdioProcessPool(vertx, config);
+    }
+
+    public StdioPipeEngineChannel(Vertx vertx, AppConfig config, StdioProcessPool pool)
+    {
+        this.vertx = vertx;
+        this.config = config;
+        this.processPool = pool;
     }
 
     @Override
@@ -45,7 +50,7 @@ public class WebSocketEngineChannel implements EngineChannel
     {
         if (closed.get())
         {
-            return Future.failedFuture(new IllegalStateException("EngineChannel is closed"));
+            return Future.failedFuture(new IllegalStateException("StdioPipeEngineChannel is closed"));
         }
 
         if (sessionId == null || sessionId.trim().isEmpty())
@@ -57,45 +62,23 @@ public class WebSocketEngineChannel implements EngineChannel
 
         // Check if channel already exists and is active
         EngineSessionChannel existing = activeChannels.get(cleanSessionId);
-
         if (existing != null && existing.isConnected())
         {
             return Future.succeededFuture(existing);
         }
 
-        String host = config.getEngineHost();
-
-        int port = config.getEnginePort();
-
-        String token = config.getEngineAuthToken();
-
-        String uri = "/session";
-
-        if (token != null && !token.trim().isEmpty())
-        {
-            uri += "?token=" + URLEncoder.encode(token.trim(), StandardCharsets.UTF_8);
-        }
-
-        WebSocketConnectOptions options = new WebSocketConnectOptions()
-            .setHost(host)
-            .setPort(port)
-            .setURI(uri);
-
-        if (token != null && !token.trim().isEmpty())
-        {
-            options.addHeader("X-Engine-Token", token.trim());
-
-        }
-
-        return webSocketClient.connect(options)
-            .map(ws ->
+        return processPool.acquireProcessForSession(cleanSessionId, messageHandler)
+            .map(proc ->
             {
-                WebSocketSessionChannel channel = new WebSocketSessionChannel(cleanSessionId, ws, messageHandler);
+                StdioPipeSessionChannel channel = new StdioPipeSessionChannel(cleanSessionId, proc, processPool);
 
-                channel.onClose(v -> activeChannels.remove(cleanSessionId));
+                channel.onClose(v ->
+                {
+                    activeChannels.remove(cleanSessionId);
+                    processPool.releaseSession(cleanSessionId);
+                });
 
                 activeChannels.put(cleanSessionId, channel);
-
                 return (EngineSessionChannel) channel;
             });
     }
@@ -108,7 +91,9 @@ public class WebSocketEngineChannel implements EngineChannel
             return Future.succeededFuture();
         }
 
-        EngineSessionChannel channel = activeChannels.remove(sessionId.trim());
+        String cleanSessionId = sessionId.trim();
+        EngineSessionChannel channel = activeChannels.remove(cleanSessionId);
+        processPool.releaseSession(cleanSessionId);
 
         if (channel != null)
         {
@@ -127,7 +112,6 @@ public class WebSocketEngineChannel implements EngineChannel
         }
 
         EngineSessionChannel channel = activeChannels.get(sessionId.trim());
-
         return channel != null && channel.isConnected();
     }
 
@@ -151,81 +135,62 @@ public class WebSocketEngineChannel implements EngineChannel
             {
                 channel.close();
             }
-
             activeChannels.clear();
-
-            return webSocketClient.close();
+            return processPool.close();
         }
 
         return Future.succeededFuture();
     }
 
+    public StdioProcessPool getProcessPool()
+    {
+        return processPool;
+    }
+
+    public JsonObject getStatusJson()
+    {
+        return processPool.getStatusJson();
+    }
+
     /**
-     * Inner implementation of EngineSessionChannel over a Vert.x WebSocket.
+     * StdioPipeSessionChannel represents an active session communicating over a Go process's stdio pipes.
      */
-    private static class WebSocketSessionChannel implements EngineSessionChannel
+    public static class StdioPipeSessionChannel implements EngineSessionChannel
     {
 
         private final String sessionId;
 
-        private final WebSocket ws;
+        private final GoProcessInstance processInstance;
+
+        private final StdioProcessPool pool;
 
         private final AtomicLong seqCounter = new AtomicLong(0);
+
+        private final AtomicBoolean isClosed = new AtomicBoolean(false);
 
         private Handler<Void> customCloseHandler;
 
         private Handler<Throwable> customErrorHandler;
 
-        public WebSocketSessionChannel(String sessionId, WebSocket ws, Handler<EngineEnvelope> messageHandler)
+        public StdioPipeSessionChannel(String sessionId, GoProcessInstance processInstance, StdioProcessPool pool)
         {
             this.sessionId = sessionId;
-            this.ws = ws;
+            this.processInstance = processInstance;
+            this.pool = pool;
 
-            ws.textMessageHandler(text ->
+            processInstance.onSessionClose(sessionId, v ->
             {
-                try
+                if (isClosed.compareAndSet(false, true))
                 {
-                  //System.out.println("Received text message: " + text);
-
-                    JsonObject json = new JsonObject(text);
-
-                    EngineEnvelope envelope = EngineEnvelope.fromJson(json);
-
-                  //System.out.println("Envelope receieved: " + envelope);
-
-                    if (envelope != null && messageHandler != null)
+                    pool.releaseSession(sessionId);
+                    if (customCloseHandler != null)
                     {
-                        messageHandler.handle(envelope);
-                    }
-                }
-                catch (Exception e)
-                {
-                    // If raw non-JSON text, wrap in generic envelope
-                    if (messageHandler != null)
-                    {
-                        EngineEnvelope fallback = EngineEnvelope.create(
-                            "message",
-                            sessionId,
-
-                            seqCounter.incrementAndGet(),
-                            new JsonObject().put("raw", text)
-
-                        );
-
-                        messageHandler.handle(fallback);
+                        customCloseHandler.handle(v);
                     }
                 }
             });
 
-            ws.closeHandler(v ->
-            {
-                if (customCloseHandler != null)
-                {
-                    customCloseHandler.handle(v);
-                }
-            });
-
-            ws.exceptionHandler(err ->
+            processInstance.onSessionError(sessionId, err ->
             {
                 if (customErrorHandler != null)
                 {
@@ -243,6 +208,11 @@ public class WebSocketEngineChannel implements EngineChannel
         @Override
         public Future<Void> send(EngineEnvelope envelope)
         {
+            if (isClosed.get() || !processInstance.isAlive())
+            {
+                return Future.failedFuture(new IllegalStateException("Session channel is closed"));
+            }
+
             if (envelope == null)
             {
                 return Future.failedFuture(new IllegalArgumentException("Envelope cannot be null"));
@@ -258,7 +228,7 @@ public class WebSocketEngineChannel implements EngineChannel
                 envelope.setSessionId(sessionId);
             }
 
-            return ws.writeTextMessage(envelope.encode());
+            return processInstance.writeEnvelope(envelope);
         }
 
         @Override
@@ -271,15 +241,30 @@ public class WebSocketEngineChannel implements EngineChannel
                 payload != null ? payload : new JsonObject()
             );
 
-            return ws.writeTextMessage(envelope.encode());
+            return send(envelope);
         }
 
         @Override
         public Future<Void> close()
         {
-            if (!ws.isClosed())
+            if (isClosed.compareAndSet(false, true))
             {
-                return ws.close();
+                // Send explicit close envelope to the Go engine
+                EngineEnvelope closeEnv = EngineEnvelope.create(
+                    "close",
+                    sessionId,
+                    seqCounter.incrementAndGet(),
+                    new JsonObject().put("reason", "closed_by_client")
+                );
+
+                processInstance.writeEnvelope(closeEnv);
+                processInstance.removeSession(sessionId);
+                pool.releaseSession(sessionId);
+
+                if (customCloseHandler != null)
+                {
+                    customCloseHandler.handle(null);
+                }
             }
 
             return Future.succeededFuture();
@@ -288,7 +273,7 @@ public class WebSocketEngineChannel implements EngineChannel
         @Override
         public boolean isConnected()
         {
-            return !ws.isClosed();
+            return !isClosed.get() && processInstance.isAlive();
         }
 
         @Override
@@ -301,6 +286,11 @@ public class WebSocketEngineChannel implements EngineChannel
         public void onError(Handler<Throwable> errorHandler)
         {
             this.customErrorHandler = errorHandler;
+        }
+
+        public GoProcessInstance getProcessInstance()
+        {
+            return processInstance;
         }
     }
 }

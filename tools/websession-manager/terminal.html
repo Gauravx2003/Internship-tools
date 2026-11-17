@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSession Manager - Terminal Test Console</title>
+    <!-- xterm.js CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <style>
+        :root {
+            --bg-dark: #12151c;
+            --bg-panel: #1a1e28;
+            --bg-card: #222736;
+            --border-color: #31384c;
+            --text-main: #e2e8f0;
+            --text-muted: #94a3b8;
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Top Header */
+        header {
+            background-color: var(--bg-panel);
+            border-bottom: 1px solid var(--border-color);
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            color: #60a5fa;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 10px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .badge-disconnected { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
+        .badge-connecting { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }
+        .badge-connected { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }
+
+        /* Main Workspace Layout */
+        .workspace {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Left Sidebar: Host Connection Form & Process Monitor */
+        .sidebar {
+            width: 360px;
+            min-width: 320px;
+            background-color: var(--bg-panel);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .section {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .section-title {
+            font-size: 0.82rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 8px;
+        }
+
+        label {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        input[type="text"], input[type="password"], input[type="number"], select, textarea {
+            width: 100%;
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            border-color: var(--primary);
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 8px 14px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+            width: 100%;
+        }
+        .btn-primary:hover { background-color: var(--primary-hover); }
+
+        .btn-danger {
+            background-color: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            width: 100%;
+        }
+        .btn-danger:hover { background-color: rgba(239, 68, 68, 0.3); }
+
+        .btn-secondary {
+            background-color: var(--bg-card);
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+        }
+        .btn-secondary:hover { background-color: #2a3042; }
+
+        /* Process Monitor Card */
+        .proc-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            font-size: 0.8rem;
+        }
+
+        .proc-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .proc-bar {
+            height: 6px;
+            background: #1e293b;
+            border-radius: 3px;
+            overflow: hidden;
+            margin: 6px 0;
+        }
+
+        .proc-bar-fill {
+            height: 100%;
+            background: #3b82f6;
+            border-radius: 3px;
+            transition: width 0.3s;
+        }
+
+        .proc-sessions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 6px;
+        }
+
+        .sess-tag {
+            background: #334155;
+            color: #cbd5e1;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.72rem;
+            font-family: monospace;
+        }
+
+        /* Right Terminal Area */
+        .terminal-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: #0b0d13;
+            overflow: hidden;
+        }
+
+        /* Tab Bar */
+        .tab-bar {
+            background-color: var(--bg-panel);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            gap: 4px;
+            overflow-x: auto;
+        }
+
+        .tab {
+            padding: 8px 14px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+
+        .tab.active {
+            color: var(--text-main);
+            border-bottom-color: var(--primary);
+            background: rgba(59, 130, 246, 0.08);
+        }
+
+        .tab-close {
+            color: #64748b;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .tab-close:hover { color: #f87171; background: rgba(239, 68, 68, 0.2); }
+
+        .btn-new-tab {
+            background: transparent;
+            border: 1px dashed var(--border-color);
+            color: var(--text-muted);
+            border-radius: 4px;
+            padding: 4px 10px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            margin-left: 6px;
+        }
+        .btn-new-tab:hover { color: var(--text-main); border-color: var(--primary); }
+
+        /* xterm viewports */
+        .tab-views {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .terminal-view {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 8px 12px;
+            display: none;
+        }
+
+        .terminal-view.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="brand">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="4 17 10 11 4 5"></polyline>
+                <line x1="12" y1="19" x2="20" y2="19"></line>
+            </svg>
+            WebSession Manager &bull; Terminal Console
+        </div>
+        <div style="display: flex; gap: 12px; align-items: center;">
+            <span id="wsStatusBadge" class="badge badge-disconnected">WebSocket: Disconnected</span>
+            <button class="btn btn-secondary" onclick="refreshEngineStatus()" style="font-size: 0.75rem; padding: 4px 8px;">
+                &#x21bb; Refresh Pool
+            </button>
+        </div>
+    </header>
+
+    <div class="workspace">
+        <!-- Sidebar: Connection details & live pool status -->
+        <div class="sidebar">
+            <div class="section">
+                <div class="section-title">SSH Connection Parameters</div>
+
+                <div class="form-group">
+                    <label>Target Host & Port</label>
+                    <div class="form-row">
+                        <input type="text" id="sshHost" value="127.0.0.1" placeholder="Host IP" style="flex: 3;" />
+                        <input type="number" id="sshPort" value="2222" placeholder="Port" style="flex: 1;" />
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="sshUser" value="alice" placeholder="SSH Username" />
+                </div>
+
+                <div class="form-group">
+                    <label>Authentication Type</label>
+                    <select id="sshAuthType" onchange="toggleAuthFields()">
+                        <option value="password" selected>Password</option>
+                        <option value="key">Private Key</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="passwordGroup">
+                    <label>Password</label>
+                    <input type="password" id="sshPassword" value="benchpass" placeholder="Password" />
+                </div>
+
+                <div class="form-group" id="keyGroup" style="display: none;">
+                    <label>Private Key (PEM)</label>
+                    <textarea id="sshKey" rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+                </div>
+
+                <div style="display: flex; gap: 8px; margin-top: 14px;">
+                    <button class="btn btn-primary" id="btnConnect" onclick="connectCurrentSession()">
+                        Connect SSH
+                    </button>
+                    <button class="btn btn-danger" id="btnDisconnect" onclick="disconnectCurrentSession()" disabled>
+                        Disconnect
+                    </button>
+                </div>
+            </div>
+
+            <!-- Live Go Process Pool & Session Routing Monitor -->
+            <div class="section" style="flex: 1;">
+                <div class="section-title">
+                    <span>Live Go Process Pool</span>
+                    <span id="totalSessionsCount" style="color: #60a5fa; font-weight: bold;">0 Sessions</span>
+                </div>
+                <div id="processPoolList" style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">
+                        No child processes running yet. Connect a session to spawn one!
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Terminal Panels with Tabs -->
+        <div class="terminal-container">
+            <div class="tab-bar" id="tabBar">
+                <!-- Dynamic tabs will appear here -->
+                <button class="btn-new-tab" onclick="createNewTab()">+ New Session</button>
+            </div>
+            <div class="tab-views" id="tabViews">
+                <!-- Dynamic xterm divs will appear here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- xterm.js & fit addon -->
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+
+    <script>
+        // Session tracking
+        let sessions = {}; // sessionId -> { term, fitAddon, state, wsConnected, div, tabBtn }
+        let activeSessionId = null;
+        let sessionCounter = 0;
+        let ws = null;
+
+        function getWsUrl() {
+            const loc = window.location;
+            if (loc.protocol === 'file:') {
+                return 'ws://localhost:8888/ws/test-engine';
+            }
+            const protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+            return `${protocol}//${loc.host}/ws/test-engine`;
+        }
+
+        function getApiUrl(path) {
+            const loc = window.location;
+            if (loc.protocol === 'file:') {
+                return `http://localhost:8888${path}`;
+            }
+            return path;
+        }
+
+        // Initialize shared WebSocket
+        function initWebSocket() {
+            const badge = document.getElementById('wsStatusBadge');
+            badge.className = 'badge badge-connecting';
+            badge.textContent = 'WebSocket: Connecting...';
+
+            ws = new WebSocket(getWsUrl());
+
+            ws.onopen = () => {
+                badge.className = 'badge badge-connected';
+                badge.textContent = 'WebSocket: Connected';
+                console.log("[WS] Connected to Vert.x engine");
+                refreshEngineStatus();
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    const sessId = msg.sessionId || msg['session.id'];
+                    handleEngineMessage(sessId, msg);
+                } catch (e) {
+                    console.error("[WS] Error parsing JSON message:", e, event.data);
+                }
+            };
+
+            ws.onclose = () => {
+                badge.className = 'badge badge-disconnected';
+                badge.textContent = 'WebSocket: Disconnected';
+                console.warn("[WS] Disconnected. Reconnecting in 3s...");
+                setTimeout(initWebSocket, 3000);
+            };
+
+            ws.onerror = (err) => {
+                console.error("[WS] Socket error:", err);
+            };
+        }
+
+        function handleEngineMessage(sessionId, msg) {
+            const sess = sessions[sessionId];
+            if (!sess) return;
+
+            if (msg.type === 'output') {
+                const data = msg.payload?.data || '';
+                sess.term.write(data);
+
+                // Send backpressure acknowledgement back to Go engine
+                if (data.length > 0 && ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'ack',
+                        sessionId: sessionId,
+                        payload: { bytes: data.length }
+                    }));
+                }
+            } else if (msg.type === 'state') {
+                const state = msg.payload?.state || 'unknown';
+                sess.state = state;
+                sess.term.writeln(`\r\n\x1b[32m[ENGINE] State: ${state} - ${msg.payload?.message || ''}\x1b[0m\r\n`);
+                updateButtonStates();
+                refreshEngineStatus();
+            } else if (msg.type === 'error') {
+                sess.term.writeln(`\r\n\x1b[31m[ERROR] ${msg.payload?.code || 'ERROR'}: ${msg.payload?.message || ''}\x1b[0m\r\n`);
+                updateButtonStates();
+            } else if (msg.type === 'closed') {
+                sess.state = 'closed';
+                sess.term.writeln(`\r\n\x1b[33m[SESSION CLOSED] Reason: ${msg.payload?.reason || 'closed'} (Exit: ${msg.payload?.exitStatus ?? -1})\x1b[0m\r\n`);
+                updateButtonStates();
+                refreshEngineStatus();
+            }
+        }
+
+        function createNewTab() {
+            sessionCounter++;
+            const sessId = `session-${sessionCounter}`;
+
+            // Create Tab Button
+            const tabBtn = document.createElement('button');
+            tabBtn.className = 'tab';
+            tabBtn.id = `tab-btn-${sessId}`;
+            tabBtn.innerHTML = `
+                <span>${sessId}</span>
+                <span class="tab-close" onclick="closeTab('${sessId}', event)">&times;</span>
+            `;
+            tabBtn.onclick = () => switchTab(sessId);
+
+            const tabBar = document.getElementById('tabBar');
+            tabBar.insertBefore(tabBtn, tabBar.lastElementChild);
+
+            // Create Terminal View Div
+            const termDiv = document.createElement('div');
+            termDiv.className = 'terminal-view';
+            termDiv.id = `term-view-${sessId}`;
+            document.getElementById('tabViews').appendChild(termDiv);
+
+            // Initialize xterm.js instance
+            const term = new Terminal({
+                cursorBlink: true,
+                theme: {
+                    background: '#0b0d13',
+                    foreground: '#e2e8f0',
+                    cursor: '#38bdf8',
+                    selectionBackground: 'rgba(56, 189, 248, 0.3)',
+                    black: '#000000',
+                    red: '#f87171',
+                    green: '#4ade80',
+                    yellow: '#facc15',
+                    blue: '#60a5fa',
+                    magenta: '#c084fc',
+                    cyan: '#38bdf8',
+                    white: '#f8fafc'
+                },
+                fontSize: 14,
+                fontFamily: 'Menlo, Monaco, "Courier New", monospace'
+            });
+
+            const fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+            term.open(termDiv);
+
+            // Forward user keystrokes to Vert.x / Go
+            term.onData(data => {
+                if (ws && ws.readyState === WebSocket.OPEN && sessions[sessId]?.state === 'connected') {
+                    ws.send(JSON.stringify({
+                        type: 'input',
+                        sessionId: sessId,
+                        payload: { data: data }
+                    }));
+                }
+            });
+
+            sessions[sessId] = {
+                term: term,
+                fitAddon: fitAddon,
+                state: 'new',
+                div: termDiv,
+                tabBtn: tabBtn
+            };
+
+            switchTab(sessId);
+            term.writeln('\x1b[34m=========================================================\x1b[0m');
+            term.writeln(`\x1b[36m Session created: ${sessId}\x1b[0m`);
+            term.writeln('\x1b[90m Click "Connect SSH" on the left panel to establish connection.\x1b[0m');
+            term.writeln('\x1b[34m=========================================================\x1b[0m\r\n');
+        }
+
+        function switchTab(sessId) {
+            if (!sessions[sessId]) return;
+            activeSessionId = sessId;
+
+            // Update Tab classes
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            sessions[sessId].tabBtn.classList.add('active');
+
+            // Update View divs
+            document.querySelectorAll('.terminal-view').forEach(v => v.classList.remove('active'));
+            sessions[sessId].div.classList.add('active');
+
+            // Fit terminal dimensions
+            setTimeout(() => {
+                sessions[sessId].fitAddon.fit();
+                sendResize(sessId);
+                sessions[sessId].term.focus();
+            }, 50);
+
+            updateButtonStates();
+        }
+
+        function closeTab(sessId, evt) {
+            if (evt) evt.stopPropagation();
+            if (!sessions[sessId]) return;
+
+            disconnectSession(sessId);
+            sessions[sessId].term.dispose();
+            sessions[sessId].div.remove();
+            sessions[sessId].tabBtn.remove();
+            delete sessions[sessId];
+
+            const remaining = Object.keys(sessions);
+            if (remaining.length > 0) {
+                switchTab(remaining[0]);
+            } else {
+                activeSessionId = null;
+                updateButtonStates();
+            }
+            refreshEngineStatus();
+        }
+
+        function sendResize(sessId) {
+            const sess = sessions[sessId];
+            if (!sess || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+            ws.send(JSON.stringify({
+                type: 'resize',
+                sessionId: sessId,
+                payload: {
+                    cols: sess.term.cols,
+                    rows: sess.term.rows
+                }
+            }));
+        }
+
+        window.addEventListener('resize', () => {
+            if (activeSessionId && sessions[activeSessionId]) {
+                sessions[activeSessionId].fitAddon.fit();
+                sendResize(activeSessionId);
+            }
+        });
+
+        function connectCurrentSession() {
+            if (!activeSessionId || !sessions[activeSessionId]) return;
+            const sessId = activeSessionId;
+            const sess = sessions[sessId];
+
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                sess.term.writeln('\x1b[31m[ERROR] WebSocket to Vert.x is not connected!\x1b[0m');
+                return;
+            }
+
+            const host = document.getElementById('sshHost').value.trim();
+            const port = parseInt(document.getElementById('sshPort').value, 10) || 22;
+            const username = document.getElementById('sshUser').value.trim();
+            const authType = document.getElementById('sshAuthType').value;
+            const password = document.getElementById('sshPassword').value;
+            const key = document.getElementById('sshKey').value.trim();
+
+            sess.state = 'connecting';
+            updateButtonStates();
+            sess.term.writeln(`\r\n\x1b[33mConnecting to ${username}@${host}:${port} over bounded Go process pipe...\x1b[0m`);
+
+            const openPayload = {
+                host: host,
+                port: port,
+                username: username,
+                authType: authType,
+                cols: sess.term.cols || 80,
+                rows: sess.term.rows || 24
+            };
+
+            if (authType === 'password') {
+                openPayload.password = password;
+            } else {
+                openPayload.privateKey = key;
+            }
+
+            ws.send(JSON.stringify({
+                type: 'open',
+                sessionId: sessId,
+                payload: openPayload
+            }));
+
+            setTimeout(refreshEngineStatus, 500);
+        }
+
+        function disconnectCurrentSession() {
+            if (!activeSessionId) return;
+            disconnectSession(activeSessionId);
+        }
+
+        function disconnectSession(sessId) {
+            const sess = sessions[sessId];
+            if (!sess) return;
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'close',
+                    sessionId: sessId,
+                    payload: { reason: 'user_disconnected' }
+                }));
+            }
+            sess.state = 'closed';
+            updateButtonStates();
+            setTimeout(refreshEngineStatus, 500);
+        }
+
+        function updateButtonStates() {
+            const btnConnect = document.getElementById('btnConnect');
+            const btnDisconnect = document.getElementById('btnDisconnect');
+
+            if (!activeSessionId || !sessions[activeSessionId]) {
+                btnConnect.disabled = true;
+                btnDisconnect.disabled = true;
+                return;
+            }
+
+            const state = sessions[activeSessionId].state;
+            if (state === 'connected') {
+                btnConnect.disabled = true;
+                btnDisconnect.disabled = false;
+            } else if (state === 'connecting') {
+                btnConnect.disabled = true;
+                btnDisconnect.disabled = false;
+            } else {
+                btnConnect.disabled = false;
+                btnDisconnect.disabled = true;
+            }
+        }
+
+        function toggleAuthFields() {
+            const type = document.getElementById('sshAuthType').value;
+            if (type === 'password') {
+                document.getElementById('passwordGroup').style.display = 'block';
+                document.getElementById('keyGroup').style.display = 'none';
+            } else {
+                document.getElementById('passwordGroup').style.display = 'none';
+                document.getElementById('keyGroup').style.display = 'block';
+            }
+        }
+
+        // Live Go Process Pool Status Monitor
+        async function refreshEngineStatus() {
+            try {
+                const res = await fetch(getApiUrl('/engine/status'));
+                if (!res.ok) return;
+                const data = await res.json();
+                renderProcessPool(data);
+            } catch (err) {
+                console.warn("[Monitor] Could not fetch /engine/status:", err.message);
+            }
+        }
+
+        function renderProcessPool(data) {
+            const listDiv = document.getElementById('processPoolList');
+            const totalSess = document.getElementById('totalSessionsCount');
+
+            totalSess.textContent = `${data.totalActiveSessions || 0} Sessions / ${data.totalProcesses || 0} Procs`;
+
+            if (!data.processes || data.processes.length === 0) {
+                listDiv.innerHTML = `
+                    <div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">
+                        No child processes running yet. Connect a session to spawn one!
+                    </div>
+                `;
+                return;
+            }
+
+            listDiv.innerHTML = data.processes.map(p => {
+                const max = p.maxCapacity || 5;
+                const cur = p.activeSessions || 0;
+                const pct = Math.min(100, (cur / max) * 100);
+                const isFull = cur >= max;
+                const statusColor = p.isAlive ? (isFull ? '#f59e0b' : '#10b981') : '#ef4444';
+
+                const sessionTags = (p.sessionIds || []).map(s => `
+                    <span class="sess-tag">${s}</span>
+                `).join('');
+
+                return `
+                    <div class="proc-card">
+                        <div class="proc-header">
+                            <span>PID: <strong style="color: #60a5fa;">${p.pid}</strong></span>
+                            <span style="color: ${statusColor}; font-weight: normal;">
+                                ${cur} / ${max} slots (${p.isAlive ? 'Alive' : 'Terminated'})
+                            </span>
+                        </div>
+                        <div class="proc-bar">
+                            <div class="proc-bar-fill" style="width: ${pct}%; background: ${statusColor};"></div>
+                        </div>
+                        <div class="proc-sessions">
+                            ${sessionTags || '<span style="color: #64748b; font-size: 0.72rem;">(0 sessions - idle)</span>'}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Periodic auto-refresh every 3 seconds
+        setInterval(refreshEngineStatus, 3000);
+
+        // Bootstrap on load
+        window.addEventListener('DOMContentLoaded', () => {
+            initWebSocket();
+            createNewTab();
+        });
+    </script>
+</body>
+</html>

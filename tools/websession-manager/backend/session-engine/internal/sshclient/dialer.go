@@ -4,8 +4,6 @@ import (
 	"context"
 	"net"
 	"time"
-
-	"golang.org/x/crypto/ssh"
 )
 
 // SessionDialer defines the interface for establishing the underlying network connection
@@ -43,17 +41,4 @@ func (d *DirectDialer) Dial(ctx context.Context, network, addr string) (net.Conn
 		KeepAlive: d.KeepAlive,
 	}
 	return dialer.DialContext(ctx, network, addr)
-}
-
-// DialSSH provides a convenience helper for generating a basic ssh.ClientConfig
-// with password authentication (maintained for backwards compatibility).
-func DialSSH(username, password string) (*ssh.ClientConfig, error) {
-	return &ssh.ClientConfig{
-		User: username,
-		Auth: []ssh.AuthMethod{
-			ssh.Password(password),
-		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         5 * time.Second,
-	}, nil
 }

@@ -2,6 +2,9 @@ package sshclient
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -22,12 +25,21 @@ type mockSSHServer struct {
 	listener        net.Listener
 	addr            string
 	port            int
+	hostSigner      ssh.Signer
 	keepAliveCount  atomic.Int64
 	windowChangeCnt atomic.Int64
 	lastCols        atomic.Uint32
 	lastRows        atomic.Uint32
 	closeOnce       sync.Once
 	stopCh          chan struct{}
+}
+
+func (s *mockSSHServer) Fingerprint() string {
+	return ssh.FingerprintSHA256(s.hostSigner.PublicKey())
+}
+
+func (s *mockSSHServer) PublicKeyString() string {
+	return string(ssh.MarshalAuthorizedKey(s.hostSigner.PublicKey()))
 }
 
 func startMockSSHServer(t *testing.T, bobPubKey, charliePubKey ssh.PublicKey) *mockSSHServer {
@@ -44,7 +56,8 @@ func startMockSSHServer(t *testing.T, bobPubKey, charliePubKey ssh.PublicKey) *m
 	}
 
 	server := &mockSSHServer{
-		stopCh: make(chan struct{}),
+		hostSigner: hostSigner,
+		stopCh:     make(chan struct{}),
 	}
 
 	// 2. Configure server auth callbacks
@@ -177,13 +190,14 @@ func TestClient_Dial_PasswordAuth_And_Terminal(t *testing.T) {
 	defer server.Close()
 
 	cfg := Config{
-		Host:              "127.0.0.1",
-		Port:              server.port,
-		Username:          "alice",
-		AuthType:          AuthTypePassword,
-		Password:          "secret123",
-		ConnectTimeout:    3 * time.Second,
-		KeepAliveInterval: 1 * time.Second,
+		Host:                "127.0.0.1",
+		Port:                server.port,
+		Username:            "alice",
+		AuthType:            AuthTypePassword,
+		Password:            "secret123",
+		ConnectTimeout:      3 * time.Second,
+		KeepAliveInterval:   1 * time.Second,
+		InsecureSkipHostKeyVerify: true,
 	}
 
 	ctx := context.Background()
@@ -256,12 +270,13 @@ func TestClient_Dial_KeyAuth(t *testing.T) {
 	defer server.Close()
 
 	cfg := Config{
-		Host:           "127.0.0.1",
-		Port:           server.port,
-		Username:       "bob",
-		AuthType:       AuthTypeKey,
-		PrivateKey:     bobKeyBytes,
-		ConnectTimeout: 3 * time.Second,
+		Host:                "127.0.0.1",
+		Port:                server.port,
+		Username:            "bob",
+		AuthType:            AuthTypeKey,
+		PrivateKey:          bobKeyBytes,
+		ConnectTimeout:      3 * time.Second,
+		InsecureSkipHostKeyVerify: true,
 	}
 
 	client, err := Dial(context.Background(), &cfg, nil)
@@ -287,13 +302,14 @@ func TestClient_Dial_KeyPassphraseAuth(t *testing.T) {
 	defer server.Close()
 
 	cfg := Config{
-		Host:           "127.0.0.1",
-		Port:           server.port,
-		Username:       "charlie",
-		AuthType:       AuthTypeKeyPassphrase,
-		PrivateKey:     charlieKeyBytes,
-		Passphrase:     passphrase,
-		ConnectTimeout: 3 * time.Second,
+		Host:                "127.0.0.1",
+		Port:                server.port,
+		Username:            "charlie",
+		AuthType:            AuthTypeKeyPassphrase,
+		PrivateKey:          charlieKeyBytes,
+		Passphrase:          passphrase,
+		ConnectTimeout:      3 * time.Second,
+		InsecureSkipHostKeyVerify: true,
 	}
 
 	client, err := Dial(context.Background(), &cfg, nil)
@@ -308,12 +324,13 @@ func TestClient_Dial_AuthFailed(t *testing.T) {
 	defer server.Close()
 
 	cfg := Config{
-		Host:           "127.0.0.1",
-		Port:           server.port,
-		Username:       "alice",
-		AuthType:       AuthTypePassword,
-		Password:       "WRONG_PASSWORD",
-		ConnectTimeout: 2 * time.Second,
+		Host:                "127.0.0.1",
+		Port:                server.port,
+		Username:            "alice",
+		AuthType:            AuthTypePassword,
+		Password:            "WRONG_PASSWORD",
+		ConnectTimeout:      2 * time.Second,
+		InsecureSkipHostKeyVerify: true,
 	}
 
 	_, err := Dial(context.Background(), &cfg, nil)
@@ -330,12 +347,13 @@ func TestClient_Dial_AuthFailed(t *testing.T) {
 func TestClient_Dial_ConnectionRefused(t *testing.T) {
 	// Pick an address/port that is definitely not listening
 	cfg := Config{
-		Host:           "127.0.0.1",
-		Port:           54321,
-		Username:       "alice",
-		AuthType:       AuthTypePassword,
-		Password:       "any",
-		ConnectTimeout: 1 * time.Second,
+		Host:                      "127.0.0.1",
+		Port:                      54321,
+		Username:                  "alice",
+		AuthType:                  AuthTypePassword,
+		Password:                  "any",
+		ConnectTimeout:            1 * time.Second,
+		InsecureSkipHostKeyVerify: true,
 	}
 
 	_, err := Dial(context.Background(), &cfg, nil)
@@ -355,12 +373,13 @@ func TestClient_Dial_Timeout(t *testing.T) {
 	cancel()
 
 	cfg := Config{
-		Host:           "127.0.0.1",
-		Port:           22,
-		Username:       "alice",
-		AuthType:       AuthTypePassword,
-		Password:       "secret",
-		ConnectTimeout: 1 * time.Second,
+		Host:                      "127.0.0.1",
+		Port:                      22,
+		Username:                  "alice",
+		AuthType:                  AuthTypePassword,
+		Password:                  "secret",
+		ConnectTimeout:            1 * time.Second,
+		InsecureSkipHostKeyVerify: true,
 	}
 
 	_, err := Dial(ctx, &cfg, nil)
@@ -380,14 +399,15 @@ func TestClient_Dial_ZeroesSecrets(t *testing.T) {
 
 	key := []byte("temporary-private-key-data")
 	cfg := Config{
-		Host:           "127.0.0.1",
-		Port:           server.port,
-		Username:       "alice",
-		AuthType:       AuthTypePassword,
-		Password:       "secret123",
-		PrivateKey:     key,
-		Passphrase:     "my-passphrase",
-		ConnectTimeout: 3 * time.Second,
+		Host:                "127.0.0.1",
+		Port:                server.port,
+		Username:            "alice",
+		AuthType:            AuthTypePassword,
+		Password:            "secret123",
+		PrivateKey:          key,
+		Passphrase:          "my-passphrase",
+		ConnectTimeout:      3 * time.Second,
+		InsecureSkipHostKeyVerify: true,
 	}
 
 	client, err := Dial(context.Background(), &cfg, nil)
@@ -413,13 +433,14 @@ func TestClient_KeepAlive_Execution(t *testing.T) {
 	defer server.Close()
 
 	cfg := Config{
-		Host:              "127.0.0.1",
-		Port:              server.port,
-		Username:          "alice",
-		AuthType:          AuthTypePassword,
-		Password:          "secret123",
-		ConnectTimeout:    2 * time.Second,
-		KeepAliveInterval: 50 * time.Millisecond, // rapid keepalive for test
+		Host:                "127.0.0.1",
+		Port:                server.port,
+		Username:            "alice",
+		AuthType:            AuthTypePassword,
+		Password:            "secret123",
+		ConnectTimeout:      2 * time.Second,
+		KeepAliveInterval:   50 * time.Millisecond,
+		InsecureSkipHostKeyVerify: true,
 	}
 
 	client, err := Dial(context.Background(), &cfg, nil)
@@ -434,5 +455,122 @@ func TestClient_KeepAlive_Execution(t *testing.T) {
 	count := server.keepAliveCount.Load()
 	if count < 2 {
 		t.Errorf("expected at least 2 keepalives to fire, received %d", count)
+	}
+}
+
+func TestClient_Dial_InsecureSkipHostKeyVerify(t *testing.T) {
+	server := startMockSSHServer(t, nil, nil)
+	defer server.Close()
+
+	cfg := Config{
+		Host:                      "127.0.0.1",
+		Port:                      server.port,
+		Username:                  "alice",
+		AuthType:                  AuthTypePassword,
+		Password:                  "secret123",
+		ConnectTimeout:            2 * time.Second,
+		InsecureSkipHostKeyVerify: true,
+	}
+
+	client, err := Dial(context.Background(), &cfg, nil)
+	if err != nil {
+		t.Fatalf("expected successful connection with InsecureSkipHostKeyVerify: %v", err)
+	}
+	defer client.Close()
+}
+
+type mockPrompter struct {
+	promptReceived string
+	response       string
+}
+
+func (m *mockPrompter) Prompt(msg string) error {
+	m.promptReceived += msg
+	return nil
+}
+
+func (m *mockPrompter) ReadLine(ctx context.Context) (string, error) {
+	return m.response, nil
+}
+
+func TestClient_Dial_TOFU_InteractivePrompt_Accept(t *testing.T) {
+	server := startMockSSHServer(t, nil, nil)
+	defer server.Close()
+
+	tmpKnownHosts := filepath.Join(t.TempDir(), "known_hosts")
+	prompter := &mockPrompter{response: "yes"}
+
+	cfg := Config{
+		Host:           "127.0.0.1",
+		Port:           server.port,
+		Username:       "alice",
+		AuthType:       AuthTypePassword,
+		Password:       "secret123",
+		ConnectTimeout: 2 * time.Second,
+		KnownHostsFile: tmpKnownHosts,
+		Prompter:       prompter,
+	}
+
+	client, err := Dial(context.Background(), &cfg, nil)
+	if err != nil {
+		t.Fatalf("expected successful connection after TOFU accept, got: %v", err)
+	}
+	defer client.Close()
+
+	if !strings.Contains(prompter.promptReceived, "The authenticity of host") {
+		t.Errorf("expected prompter to receive OpenSSH prompt, got: %s", prompter.promptReceived)
+	}
+	if !strings.Contains(prompter.promptReceived, "Warning: Permanently added") {
+		t.Errorf("expected prompter to receive permanently added notice, got: %s", prompter.promptReceived)
+	}
+
+	// Verify file was written
+	data, err := os.ReadFile(tmpKnownHosts)
+	if err != nil || len(data) == 0 {
+		t.Fatalf("expected known_hosts to have content, err=%v, data=%s", err, string(data))
+	}
+
+	// Next dial without prompter should now succeed because it is in known_hosts!
+	cfg2 := Config{
+		Host:           "127.0.0.1",
+		Port:           server.port,
+		Username:       "alice",
+		AuthType:       AuthTypePassword,
+		Password:       "secret123",
+		ConnectTimeout: 2 * time.Second,
+		KnownHostsFile: tmpKnownHosts,
+	}
+	client2, err := Dial(context.Background(), &cfg2, nil)
+	if err != nil {
+		t.Fatalf("expected second connection to succeed directly from saved known_hosts: %v", err)
+	}
+	defer client2.Close()
+}
+
+func TestClient_Dial_TOFU_InteractivePrompt_Reject(t *testing.T) {
+	server := startMockSSHServer(t, nil, nil)
+	defer server.Close()
+
+	tmpKnownHosts := filepath.Join(t.TempDir(), "known_hosts")
+	prompter := &mockPrompter{response: "no"}
+
+	cfg := Config{
+		Host:           "127.0.0.1",
+		Port:           server.port,
+		Username:       "alice",
+		AuthType:       AuthTypePassword,
+		Password:       "secret123",
+		ConnectTimeout: 2 * time.Second,
+		KnownHostsFile: tmpKnownHosts,
+		Prompter:       prompter,
+	}
+
+	_, err := Dial(context.Background(), &cfg, nil)
+	if err == nil {
+		t.Fatalf("expected error when user rejects host key, got nil")
+	}
+
+	if !strings.Contains(prompter.promptReceived, "Host key verification rejected by user") {
+		t.Errorf("expected rejection notice, got: %s", prompter.promptReceived)
 	}
 }

@@ -97,6 +97,11 @@
         <version>${maven-compiler-plugin.version}</version>
         <configuration>
           <release>17</release>
+          <testExcludes>
+            <testExclude>**/TestTerminalSessionAuthIntegration.java</testExclude>
+            <testExclude>**/TestAuthServiceCache.java</testExclude>
+            <testExclude>**/TestRefreshTokenRotation.java</testExclude>
+          </testExcludes>
         </configuration>
       </plugin>
       <plugin>

@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 // ErrorCode represents engine-standard error codes defined in Module-And-API.md (§4.1).
@@ -91,7 +92,19 @@ func ClassifyError(err error) *SSHError {
 		return NewSSHError(ErrCodeConnectTimeout, "connection timed out", err)
 	}
 
-	// 4. Host key verification errors
+	// 4. Host key verification errors (MITM protection)
+	var keyErr *knownhosts.KeyError
+	if errors.As(err, &keyErr) {
+		if len(keyErr.Want) > 0 {
+			return NewSSHError(ErrCodeHostKeyMismatch, "server host key does not match trusted key (potential MITM attack)", err)
+		}
+		return NewSSHError(ErrCodeHostKeyRejected, "server host key is unknown or rejected by verifier", err)
+	}
+	var revokedErr *knownhosts.RevokedError
+	if errors.As(err, &revokedErr) {
+		return NewSSHError(ErrCodeHostKeyRejected, "server host key has been revoked", err)
+	}
+
 	if strings.Contains(errMsgLower, "host key mismatch") || strings.Contains(errMsgLower, "hostkey mismatch") {
 		return NewSSHError(ErrCodeHostKeyMismatch, "server host key does not match trusted key", err)
 	}
@@ -113,13 +126,10 @@ func ClassifyError(err error) *SSHError {
 	}
 
 	// 6. PTY / Session allocation errors
-	if strings.Contains(errMsgLower, "request-pty") ||
-		strings.Contains(errMsgLower, "pty allocation") ||
-		strings.Contains(errMsgLower, "failed to request pty") ||
-		strings.Contains(errMsgLower, "failed to start shell") {
-		return NewSSHError(ErrCodePTYFailed, "failed to allocate pseudo-terminal or shell", err)
+	if strings.Contains(errMsgLower, "request-pty failed") || strings.Contains(errMsgLower, "pty failed") {
+		return NewSSHError(ErrCodePTYFailed, "failed to allocate pseudo-terminal on remote host", err)
 	}
 
-	// 7. Generic / Internal error fallback
-	return NewSSHError(ErrCodeInternal, "internal ssh error", err)
+	// 7. Fallback generic internal error
+	return NewSSHError(ErrCodeInternal, "unexpected ssh error", err)
 }

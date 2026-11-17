@@ -3,6 +3,7 @@ package sshclient
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -20,16 +21,19 @@ const (
 
 // Config holds all parameters required to dial and authenticate an SSH session.
 type Config struct {
-	Host              string              // Target remote hostname or IP
-	Port              int                 // SSH port (defaults to 22 if <= 0)
-	Username          string              // Remote SSH username
-	AuthType          AuthType            // "password", "key", or "key_passphrase"
-	Password          string              // Remote account password (for AuthTypePassword)
-	PrivateKey        []byte              // Raw PEM/OpenSSH private key bytes (for AuthTypeKey/AuthTypeKeyPassphrase)
-	Passphrase        string              // Decryption passphrase for encrypted private keys
-	ConnectTimeout    time.Duration       // TCP dial & SSH handshake timeout (default: 10s)
-	KeepAliveInterval time.Duration       // Interval for sending SSH keepalive requests (default: 30s; 0 disables)
-	HostKeyCallback   ssh.HostKeyCallback // Server host-key verification callback (defaults to InsecureIgnoreHostKey)
+	Host                      string              // Target remote hostname or IP
+	Port                      int                 // SSH port (defaults to 22 if <= 0)
+	Username                  string              // Remote SSH username
+	AuthType                  AuthType            // "password", "key", or "key_passphrase"
+	Password                  string              // Remote account password (for AuthTypePassword)
+	PrivateKey                []byte              // Raw PEM/OpenSSH private key bytes (for AuthTypeKey/AuthTypeKeyPassphrase)
+	Passphrase                string              // Decryption passphrase for encrypted private keys
+	ConnectTimeout            time.Duration       // TCP dial & SSH handshake timeout (default: 10s)
+	KeepAliveInterval         time.Duration       // Interval for sending SSH keepalive requests (default: 30s; 0 disables)
+	HostKeyCallback           ssh.HostKeyCallback // Explicit server host-key verification callback
+	KnownHostsFile            string              // Custom path to OpenSSH known_hosts file (defaults to ~/.ssh/known_hosts)
+	InsecureSkipHostKeyVerify bool                // Explicit opt-in to ignore host key checking (dev/testing only)
+	Prompter                  InteractivePrompter // Interactive terminal prompter for TOFU host key confirmation
 }
 
 // Validate validates that essential connection and authentication fields are present.
@@ -77,6 +81,28 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// resolveHostKeyCallback resolves host key verification:
+// 1. Explicit HostKeyCallback (if provided).
+// 2. InsecureSkipHostKeyVerify or ENGINE_INSECURE_IGNORE_HOSTKEY (development opt-in).
+// 3. ~/.ssh/known_hosts verification with OpenSSH-identical terminal TOFU prompt.
+func (c *Config) resolveHostKeyCallback() (ssh.HostKeyCallback, error) {
+	if c.HostKeyCallback != nil {
+		return c.HostKeyCallback, nil
+	}
+	if c.InsecureSkipHostKeyVerify || os.Getenv("ENGINE_INSECURE_IGNORE_HOSTKEY") == "true" {
+		return ssh.InsecureIgnoreHostKey(), nil
+	}
+
+	knownHostsPath := c.KnownHostsFile
+	if strings.TrimSpace(knownHostsPath) == "" {
+		if envPath := os.Getenv("ENGINE_KNOWN_HOSTS_FILE"); envPath != "" {
+			knownHostsPath = envPath
+		}
+	}
+
+	return NewTOFUHostKeyCallback(knownHostsPath, c.Prompter)
+}
+
 // BuildClientConfig constructs a standard *ssh.ClientConfig configured with the
 // appropriate authentication method, timeouts, and host key verification callback.
 func (c *Config) BuildClientConfig() (*ssh.ClientConfig, error) {
@@ -114,9 +140,9 @@ func (c *Config) BuildClientConfig() (*ssh.ClientConfig, error) {
 		timeout = 10 * time.Second
 	}
 
-	hostKeyCallback := c.HostKeyCallback
-	if hostKeyCallback == nil {
-		hostKeyCallback = ssh.InsecureIgnoreHostKey()
+	hostKeyCallback, err := c.resolveHostKeyCallback()
+	if err != nil {
+		return nil, NewSSHError(ErrCodeHostKeyRejected, "failed to configure host key verification", err)
 	}
 
 	return &ssh.ClientConfig{

@@ -123,7 +123,7 @@ public class AuthServiceImpl implements AuthService
 
     // Purge expired refresh tokens every hour
 
-    this.vertx.setPeriodic(60 * 60 * 1000L, id ->
+    this.vertx.setPeriodic( 60 * 60 * 1000L, id ->
 
       this.refreshTokenRepository.deleteExpired()
 

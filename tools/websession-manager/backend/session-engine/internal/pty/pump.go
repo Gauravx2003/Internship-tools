@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -150,7 +151,41 @@ func (p *Pump) Start() error {
 
 	go p.outputLoop()
 
+	if waiter, ok := p.term.(Waiter); ok {
+		go p.monitorExit(waiter)
+	}
+
 	return nil
+}
+
+
+// monitorExit runs in the background calling Wait() on the remote SSH session.
+// When the remote shell terminates (e.g. user typed 'exit' or SSH session ended),
+// it extracts exitStatus and terminates the pump.
+func (p *Pump) monitorExit(waiter Waiter) {
+	err := waiter.Wait()
+
+	status := 0
+	if err != nil {
+		var exitErr *ssh.ExitError
+		if errors.As(err, &exitErr) {
+			status = exitErr.ExitStatus()
+		} else {
+			status = -1
+		}
+	}
+
+	p.mu.Lock()
+	p.exitStatus = status
+	p.hasExited = true
+	p.mu.Unlock()
+
+	// Give stdout a brief window to flush residual bytes
+	select {
+	case <-p.doneCh:
+	case <-time.After(150 * time.Millisecond):
+		p.terminate("exit", status)
+	}
 }
 
 // WriteInput writes input bytes (user keystrokes, commands) directly into remote terminal stdin.
@@ -207,10 +242,13 @@ func (p *Pump) Acknowledge(bytesConsumed int64) {
 // delivering them to OutputSink subject to flow-control backpressure.
 func (p *Pump) outputLoop() {
 	defer func() {
-		// Wait for process exit status if available
 		exitStatus := 0
 		if waiter, ok := p.term.(Waiter); ok {
-			if err := waiter.Wait(); err != nil {
+			waitDone := make(chan error, 1)
+			go func() { waitDone <- waiter.Wait() }()
+			select {
+			case err := <-waitDone:
+				if err != nil {
 				var exitErr *ssh.ExitError
 				if errors.As(err, &exitErr) {
 					exitStatus = exitErr.ExitStatus()
@@ -218,8 +256,16 @@ func (p *Pump) outputLoop() {
 					exitStatus = -1
 				}
 			}
+			case <-time.After(200 * time.Millisecond):
+				p.mu.RLock()
+				exitStatus = p.exitStatus
+				p.mu.RUnlock()
+			}
+		} else {
+			p.mu.RLock()
+			exitStatus = p.exitStatus
+			p.mu.RUnlock()
 		}
-
 		p.terminate("exit", exitStatus)
 	}()
 
